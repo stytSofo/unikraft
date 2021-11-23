@@ -72,6 +72,7 @@ UK_LIB_PARAM_STR(rootdev);
 UK_LIB_PARAM_STR(rootopts);
 UK_LIB_PARAM(rootflags, __u64);
 
+#ifdef CONFIG_LIBINITRAMFS
 static inline int _rootfs_initramfs()
 {
 	struct ukplat_memregion_desc memregion_desc __attribute__((flexos_whitelist));
@@ -93,6 +94,7 @@ static inline int _rootfs_initramfs()
 	flexos_gate(ukdebug, uk_pr_err, FLEXOS_SHARED_LITERAL("Failed to mount initrd\n"));
 	return -CPIO_NO_MEMREGION;
 }
+#endif
 
 __attribute__((libukboot_callback))
 static int vfscore_rootfs(void)
