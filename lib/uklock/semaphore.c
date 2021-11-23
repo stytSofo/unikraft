@@ -1,9 +1,14 @@
 #include <uk/semaphore.h>
+#include <flexos/isolation.h>
 
 void uk_semaphore_init(struct uk_semaphore *s, long count)
 {
 	s->count = count;
-	uk_waitq_init(&s->wait);
+	/* Volatile to make sure that the compiler doesn't reorganize
+	 * the code in such a way that the dereference happens in the
+	 * other domain... */
+	volatile struct uk_waitq *wq = &s->wait;
+	flexos_gate(libuksched, uk_waitq_init, wq);
 
 #ifdef UK_SEMAPHORE_DEBUG
 	uk_pr_debug("Initialized semaphore %p with %ld\n",

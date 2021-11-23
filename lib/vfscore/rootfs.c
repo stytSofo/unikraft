@@ -40,6 +40,12 @@
 #include <sys/stat.h>
 #include <sys/mount.h>
 #include <uk/init.h>
+#ifdef CONFIG_LIBINITRAMFS
+#include <uk/plat/memory.h>
+#include <uk/cpio.h>
+#include <string.h>
+#endif
+#include <flexos/isolation.h>
 
 static const char *rootfs   = CONFIG_LIBVFSCORE_ROOTFS;
 
@@ -66,6 +72,29 @@ UK_LIB_PARAM_STR(rootdev);
 UK_LIB_PARAM_STR(rootopts);
 UK_LIB_PARAM(rootflags, __u64);
 
+static inline int _rootfs_initramfs()
+{
+	struct ukplat_memregion_desc memregion_desc __attribute__((flexos_whitelist));
+	int initrd;
+	enum cpio_error error;
+
+	flexos_gate_r(libukplat, initrd, ukplat_memregion_find_initrd0, &memregion_desc);
+	if (initrd != -1) {
+		flexos_gate(libukplat, ukplat_memregion_get, initrd, &memregion_desc);
+		if (mount("", "/", "ramfs", 0, NULL) < 0)
+			return -CPIO_MOUNT_FAILED;
+
+		error =
+		    cpio_extract("/", memregion_desc.base, memregion_desc.len);
+		if (error < 0)
+			flexos_gate(ukdebug, uk_pr_err, FLEXOS_SHARED_LITERAL("Failed to mount initrd\n"));
+		return error;
+	}
+	flexos_gate(ukdebug, uk_pr_err, FLEXOS_SHARED_LITERAL("Failed to mount initrd\n"));
+	return -CPIO_NO_MEMREGION;
+}
+
+__attribute__((libukboot_callback))
 static int vfscore_rootfs(void)
 {
 	/*
@@ -74,21 +103,19 @@ static int vfscore_rootfs(void)
 	 * have to be mounted later.
 	 */
 	if (!rootfs || rootfs[0] == '\0') {
-		uk_pr_crit("Parameter 'vfs.rootfs' is invalid\n");
+		flexos_gate(ukdebug, uk_pr_crit, FLEXOS_SHARED_LITERAL("Parameter 'vfs.rootfs' is invalid\n"));
 		return -1;
 	}
 
-	uk_pr_info("Mount %s to /...\n", rootfs);
+#ifdef CONFIG_LIBINITRAMFS
+	return _rootfs_initramfs();
+#else
+	flexos_gate(ukdebug, uk_pr_info, "Mount %s to /...\n", rootfs);
 	if (mount(rootdev, "/", rootfs, rootflags, rootopts) != 0) {
-		uk_pr_crit("Failed to mount /: %d\n", errno);
+		flexos_gate(ukdebug, uk_pr_crit, FLEXOS_SHARED_LITERAL("Failed to mount /: %d\n"), errno);
 		return -1;
 	}
-
-	/*
-	 * TODO: Alternatively we could extract an archive found
-	 * as initrd to a ramfs '/' if we have got fsname 'initrd'
-	 */
-
+#endif
 	return 0;
 }
 

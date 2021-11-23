@@ -80,9 +80,13 @@ static void sw_ctx_start(void *ctx)
 
 	UK_ASSERT(sw_ctx != NULL);
 
-	set_tls_pointer(sw_ctx->tlsp);
+	volatile unsigned long tlsp = sw_ctx->tlsp;
+	volatile unsigned long sp = sw_ctx->sp;
+	volatile unsigned long ip = sw_ctx->ip;
+
+	set_tls_pointer(tlsp);
 	/* Switch stacks and run the thread */
-	asm_ctx_start(sw_ctx->sp, sw_ctx->ip);
+	asm_ctx_start(sp, ip);
 
 	UK_CRASH("Thread did not start.");
 }
@@ -94,10 +98,21 @@ static void sw_ctx_switch(void *prevctx, void *nextctx)
 	struct sw_ctx *p = prevctx;
 	struct sw_ctx *n = nextctx;
 
+	/* Hack need access to both domains */
+#if CONFIG_LIBFLEXOS_INTELPKU
+	unsigned long pkru = rdpkru();
+	wrpkru(0x0);
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+
 	save_extregs(p);
 	restore_extregs(n);
 	set_tls_pointer(n->tlsp);
 	asm_sw_ctx_switch(prevctx, nextctx);
+
+#if CONFIG_LIBFLEXOS_INTELPKU
+	/* TODO FLEXOS: revisit, possible fuck up because of stack switches... */
+	wrpkru(pkru);
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
 }
 
 void sw_ctx_callbacks_init(struct ukplat_ctx_callbacks *ctx_cbs)

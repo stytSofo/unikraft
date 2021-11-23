@@ -34,6 +34,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <uk/errptr.h>
+#include <flexos/isolation.h>
 #include "xs_watch.h"
 
 /* Watches list */
@@ -64,7 +65,7 @@ struct xs_watch *xs_watch_create(const char *path)
 
 	ukarch_spin_lock_init(&xsw->base.lock);
 	xsw->base.pending_events = 0;
-	uk_waitq_init(&xsw->base.wq);
+	flexos_gate(libuksched, uk_waitq_init, &xsw->base.wq);
 
 	/* set path */
 	tmpstr = (char *) (xsw + 1);

@@ -7,6 +7,12 @@
 COMPFLAGS    += -nostdlib
 COMPFLAGS    += -U __linux__ -U __FreeBSD__ -U __sun__
 COMPFLAGS    += -fno-omit-frame-pointer
+# treat "attribute directive ignored" as error for FlexOS, this is indicative
+# that a rewriting pass failed
+COMPFLAGS    += -Werror=attributes
+# because of Coccinelle, a good number of __unused attributes have to be removed
+# as a consequence we experience many spurious warnings. Disable them for now
+COMPFLAGS    += -Wno-unused-variable
 COMPFLAGS-$(call have_gcc)	+= -fno-tree-sra -fno-split-stack -nostdinc
 
 ifneq ($(HAVE_STACKPROTECTOR),y)
@@ -20,6 +26,30 @@ ASINCLUDES   += -I$(CONFIG_UK_BASE)/include
 CINCLUDES    += -I$(CONFIG_UK_BASE)/include
 CXXINCLUDES  += -I$(CONFIG_UK_BASE)/include
 GOCINCLUDES  += -I$(CONFIG_UK_BASE)/include
+
+RUSTCFLAGS-y	+= --emit=obj --crate-type=rlib --edition=2018 \
+		-Cpanic=abort -Cembed-bitcode=n \
+		-Zbinary_dep_depinfo=y -Zsymbol-mangling-version=v0 \
+		-Cforce-unwind-tables=n -Ccodegen-units=1 \
+		-Dunsafe_op_in_unsafe_fn -Drust_2018_idioms
+
+
+RUSTCFLAGS-$(CONFIG_OPTIMIZE_NONE)         += -Copt-level="0"
+RUSTCFLAGS-$(CONFIG_OPTIMIZE_SIZE)         += -Copt-level="s"
+RUSTCFLAGS-$(CONFIG_OPTIMIZE_PERF)         += -Copt-level="2"
+
+RUSTCFLAGS-$(CONFIG_DEBUG_SYMBOLS_LVL0)     += -Cdebuginfo=0
+RUSTCFLAGS-$(CONFIG_DEBUG_SYMBOLS_LVL1)     += -Cdebuginfo=1
+RUSTCFLAGS-$(CONFIG_DEBUG_SYMBOLS_LVL2)     += -Cdebuginfo=2
+# NOTE: There is not level 3 in rustc
+RUSTCFLAGS-$(CONFIG_DEBUG_SYMBOLS_LVL3)     += -Cdebuginfo=2
+
+# NOTE: rustc supports LTO only with clang
+ifeq ($(call have_clang),y)
+RUSTCFLAGS-$(CONFIG_OPTIMIZE_LTO)	+= -Clinker-plugin-lto
+else
+RUSTCFLAGS-y	+= -Cembed-bitcode=n -Clto=n
+endif
 
 LIBLDFLAGS  += -nostdlib -Wl,-r -Wl,-d -Wl,--build-id=none -no-pie
 LIBLDFLAGS-$(call have_gcc)	+= -nostdinc

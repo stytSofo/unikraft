@@ -38,6 +38,8 @@
 #include <uk/assert.h>
 #include <uk/arch/types.h>
 #include <uk/essentials.h>
+#include <flexos/isolation.h>
+#include <uk/plat/time.h>
 #include <errno.h>
 
 #ifdef __cplusplus
@@ -56,6 +58,12 @@ int uk_sched_register(struct uk_sched *s);
 struct uk_sched *uk_sched_get_default(void);
 int uk_sched_set_default(struct uk_sched *s);
 
+static inline __nsec _uk_sched_monotonic_clock_wrapper(void)
+{
+	__nsec time;
+	flexos_gate_r(libukplat, time, ukplat_monotonic_clock);
+	return time;
+}
 
 typedef void  (*uk_sched_yield_func_t)
 		(struct uk_sched *s);
@@ -140,11 +148,10 @@ static inline int uk_sched_thread_remove(struct uk_sched *s,
 	return 0;
 }
 
-static inline void uk_sched_thread_blocked(struct uk_sched *s,
-		struct uk_thread *t)
+static inline void uk_sched_thread_blocked(struct uk_thread *t)
 {
-	UK_ASSERT(s);
-	s->thread_blocked(s, t);
+	UK_ASSERT(t);
+	(t->sched)->thread_blocked(t->sched, t);
 }
 
 static inline void uk_sched_thread_woken(struct uk_sched *s,
@@ -250,8 +257,33 @@ static inline bool uk_sched_started(struct uk_sched *sched)
 struct uk_thread *uk_sched_thread_create(struct uk_sched *sched,
 		const char *name, const uk_thread_attr_t *attr,
 		void (*function)(void *), void *arg);
+
+#if CONFIG_LIBFLEXOS_VMEPT
+/* This doesn't create other threads in other compartments.
+ * A theread created via this function can't initiate RPC calls,
+ * but it can make RPC calls in response to received RPC calls. */
+struct uk_thread *uk_sched_thread_create_rpc_only(struct uk_sched *sched,
+		const char *name, const uk_thread_attr_t *attr,
+		void (*function)(void *), void *arg,
+		uint8_t normal_thread_comp_id, uint8_t normal_thread_tid,
+		volatile struct flexos_vmept_thread_map *thread_map);
+#endif /* CONFIG_LIBFLEXOS_VMEPT */
+
+struct uk_thread *uk_sched_thread_create_main(struct uk_sched *sched,
+		const uk_thread_attr_t *attr,
+		void (*function)(void *), void *arg);
 void uk_sched_thread_destroy(struct uk_sched *sched,
 		struct uk_thread *thread);
+
+#if CONFIG_LIBFLEXOS_VMEPT
+/* This doesn't destroy  threads in other compartments.
+ * Only for use on rpc threads. */
+void uk_sched_thread_destroy_rpc_only(struct uk_sched *sched,
+		struct uk_thread *thread,
+		uint8_t normal_thread_comp_id, uint8_t normal_thread_tid,
+		volatile struct flexos_vmept_thread_map *thread_map);
+#endif /* CONFIG_LIBFLEXOS_VMEPT */
+
 void uk_sched_thread_kill(struct uk_sched *sched,
 		struct uk_thread *thread);
 

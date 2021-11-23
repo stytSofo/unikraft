@@ -41,10 +41,12 @@
 #include <vfscore/uio.h>
 #include <vfscore/vnode.h>
 #include <vfscore/mount.h>
+#include <flexos/isolation.h>
 
 static int __write_fn(void *dst __unused, void *src, size_t *cnt)
 {
-	int ret = ukplat_coutk(src, *cnt);
+	int ret;
+	flexos_gate_r(libukplat, ret, ukplat_coutk, src, *cnt);
 
 	if (ret < 0)
 		/* TODO: remove -1 when vfscore switches to negative
@@ -184,7 +186,12 @@ static struct vnops stdio_vnops = {
 	stdio_symlink,		/* symbolic link */
 };
 
-static struct vnode stdio_vnode = {
+/* FIXME FLEXOS: this vnode shouldn't be shared when using VM/EPT */
+static struct vnode stdio_vnode
+#if CONFIG_LIBFLEXOS_INTELPKU
+__section(".data_shared")
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+= {
 	.v_ino = 1,
 	.v_op = &stdio_vnops,
 	.v_lock = UK_MUTEX_INITIALIZER(stdio_vnode.v_lock),
@@ -215,7 +222,7 @@ void init_stdio(void)
 	UK_ASSERT(fd == 0);
 	vfscore_install_fd(0, &stdio_file);
 	if (dup2(0, 1) != 1)
-		uk_pr_err("failed to dup to stdin\n");
+		flexos_gate(ukdebug, uk_pr_err, FLEXOS_SHARED_LITERAL("failed to dup to stdin\n"));
 	if (dup2(0, 2) != 2)
-		uk_pr_err("failed to dup to stderr\n");
+		flexos_gate(ukdebug, uk_pr_err, FLEXOS_SHARED_LITERAL("failed to dup to stderr\n"));
 }

@@ -211,13 +211,13 @@ int uk_sig_thread_kill(struct uk_thread *tid, int sig)
 		return -1;
 	}
 
-	ptr = &tid->signals_container;
+	ptr = tid->signals_container;
 
 	/* setup siginfo */
 	uk_sig_init_siginfo(&siginfo, sig);
 
 	/* check if we are sending this to ourself */
-	if (&tid->signals_container == _UK_TH_SIG) {
+	if (tid->signals_container == _UK_TH_SIG) {
 		/* if it's not masked just run it */
 		if (!uk_sigismember(&ptr->mask, sig)) {
 			/* remove the signal from pending */
@@ -324,11 +324,6 @@ int uk_thread_sigmask(int how, const sigset_t *set, sigset_t *oldset)
 	}
 
 	return 0;
-}
-
-struct uk_thread_sig *uk_crr_thread_sig_container(void)
-{
-	return &(uk_thread_current()->signals_container);
 }
 
 void uk_sig_init_siginfo(siginfo_t *siginfo, int sig)

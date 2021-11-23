@@ -64,6 +64,8 @@
 	popq %rdi
 .endm
 
+/* IMPORTANT NOTE: the interrupt/exception handler MUST be able to write
+ * the stack. Otherwise the kernel will triple fault! */
 .macro TRAP_ENTRY trapname, has_ec
 ENTRY(ASM_TRAP_SYM(\trapname))
 	cld

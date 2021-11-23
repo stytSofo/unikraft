@@ -31,7 +31,8 @@
 #include <x86/desc.h>
 #include <kvm-x86/traps.h>
 
-static struct seg_desc32 cpu_gdt64[GDT_NUM_ENTRIES] __align64b;
+__section(".intrstack")
+struct seg_desc32 cpu_gdt64[GDT_NUM_ENTRIES] __align64b;
 
 /*
  * The monitor (ukvm) or bootloader + bootstrap (virtio) starts us up with a
@@ -59,13 +60,22 @@ static void gdt_init(void)
 	 */
 }
 
-static struct tss64 cpu_tss;
+/* FIXME FLEXOS: like the interrupt stack, the CPU task state segment
+ * has to be reachable as part of the interrupt handling process. If the
+ * TSS is protected with privileged PKU keys the CPU will silently (!)
+ * triple fault. This looks like a CPU design issue. We should investigate
+ * further on the consequences of leaving this accessible to all, and
+ * try to find a workaround.
+ */
+__section(".intrstack")
+struct tss64 cpu_tss;
 
 __section(".intrstack")  __align(STACK_SIZE)
 char cpu_intr_stack[STACK_SIZE];  /* IST1 */
 __section(".intrstack")  __align(STACK_SIZE)
 char cpu_trap_stack[STACK_SIZE];  /* IST2 */
-static char cpu_nmi_stack[4096];  /* IST3 */
+__section(".intrstack")
+char cpu_nmi_stack[4096];  /* IST3 */
 
 static void tss_init(void)
 {
@@ -101,7 +111,8 @@ DECLARE_TRAP_EC(double_fault,  "double fault")
 DECLARE_TRAP_EC(virt_error,    "virtualization error")
 
 
-static struct seg_gate_desc64 cpu_idt[IDT_NUM_ENTRIES] __align64b;
+__section(".intrstack")
+struct seg_gate_desc64 cpu_idt[IDT_NUM_ENTRIES] __align64b;
 
 static void idt_fillgate(unsigned int num, void *fun, unsigned int ist)
 {

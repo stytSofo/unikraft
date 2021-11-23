@@ -56,8 +56,9 @@
 #include <uk/mutex.h>
 
 #include <devfs/device.h>
+#include <flexos/isolation.h>
 
-static struct uk_mutex devfs_lock = UK_MUTEX_INITIALIZER(devfs_lock);
+static struct uk_mutex devfs_lock __attribute__((flexos_whitelist)) = UK_MUTEX_INITIALIZER(devfs_lock);
 
 /* list head of the devices */
 static struct device *device_list;

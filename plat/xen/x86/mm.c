@@ -36,7 +36,7 @@
  */
 
 #include <string.h>
-#include <uk/plat/common/sections.h>
+#include <uk/sections.h>
 #include <errno.h>
 #include <uk/alloc.h>
 #include <uk/plat/config.h>
@@ -227,45 +227,6 @@ void _init_mem_build_pagetable(unsigned long *start_pfn, unsigned long *max_pfn)
 }
 
 /*
- * Get the PTE for virtual address va if it exists. Otherwise NULL.
- */
-static pgentry_t *get_pte(unsigned long va)
-{
-	unsigned long mfn;
-	pgentry_t *tab;
-	unsigned int offset;
-
-	tab = pt_base;
-
-#if defined(__x86_64__)
-	offset = l4_table_offset(va);
-	if (!(tab[offset] & _PAGE_PRESENT))
-		return NULL;
-
-	mfn = pte_to_mfn(tab[offset]);
-	tab = mfn_to_virt(mfn);
-#endif
-	offset = l3_table_offset(va);
-	if (!(tab[offset] & _PAGE_PRESENT))
-		return NULL;
-
-	mfn = pte_to_mfn(tab[offset]);
-	tab = mfn_to_virt(mfn);
-	offset = l2_table_offset(va);
-	if (!(tab[offset] & _PAGE_PRESENT))
-		return NULL;
-
-	if (tab[offset] & _PAGE_PSE)
-		return &tab[offset];
-
-	mfn = pte_to_mfn(tab[offset]);
-	tab = mfn_to_virt(mfn);
-	offset = l1_table_offset(va);
-
-	return &tab[offset];
-}
-
-/*
  * Return a valid PTE for a given virtual address.
  * If PTE does not exist, allocate page-table pages.
  */
@@ -433,18 +394,12 @@ unsigned long allocate_ondemand(unsigned long n, unsigned long align)
 
 		unsigned long addr =
 			demand_map_area_start + page_idx * PAGE_SIZE;
-		pgentry_t *pte = get_pte(addr);
 
 		for (contig = 0; contig < n; contig++, addr += PAGE_SIZE) {
-			if (!(addr & L1_MASK))
-				pte = get_pte(addr);
+			unsigned long pte = uk_virt_to_pte(addr);
 
-			if (pte) {
-				if (*pte & _PAGE_PRESENT)
-					break;
-
-				pte++;
-			}
+            if (pte & _PAGE_PRESENT)
+                break;
 		}
 
 		if (contig == n)
@@ -483,16 +438,29 @@ unsigned long allocate_ondemand(unsigned long n, unsigned long align)
 void *map_frames_ex(const unsigned long *mfns, unsigned long n,
 		unsigned long stride, unsigned long incr,
 		unsigned long alignment,
-		domid_t id, int *err, unsigned long prot,
-		struct uk_alloc *a)
+		domid_t id __unused, int *err, unsigned long prot,
+		struct uk_alloc *a __unused)
 {
 	unsigned long va = allocate_ondemand(n, alignment);
+	size_t i;
+	int rc;
 
 	if (!va)
 		return NULL;
 
+	for (i = 0; i < n; i++) {
+		rc = uk_page_map(va + i * PAGE_SIZE, (mfns[i * stride] + i * incr) << PAGE_SHIFT, prot, 0);
+		if (rc) {
+            *err = rc;
+			return NULL;
+        }
+	}
+
+	/* TODO(fane) */
+	/*
 	if (do_map_frames(va, mfns, n, stride, incr, id, err, prot, a))
 		return NULL;
+	*/
 
 	return (void *) va;
 }
@@ -604,7 +572,7 @@ void _init_mem_set_readonly(void *text, void *etext)
         page = tab[offset];
         mfn = pte_to_mfn(page);
         tab = to_virt(mfn_to_pfn(mfn) << PAGE_SHIFT);
-        offset = l2_table_offset(start_address);        
+        offset = l2_table_offset(start_address);
         if ( !(tab[offset] & _PAGE_PSE) )
         {
             page = tab[offset];
@@ -617,7 +585,7 @@ void _init_mem_set_readonly(void *text, void *etext)
         if ( start_address != (unsigned long)&_libxenplat_shared_info )
         {
 #ifdef CONFIG_PARAVIRT
-            mmu_updates[count].ptr = 
+            mmu_updates[count].ptr =
                 ((pgentry_t)mfn << PAGE_SHIFT) + sizeof(pgentry_t) * offset;
             mmu_updates[count].val = tab[offset] & ~_PAGE_RW;
             count++;
@@ -631,7 +599,7 @@ void _init_mem_set_readonly(void *text, void *etext)
         start_address += page_size;
 
 #ifdef CONFIG_PARAVIRT
-        if ( count == L1_PAGETABLE_ENTRIES || 
+        if ( count == L1_PAGETABLE_ENTRIES ||
              start_address + page_size > end_address )
         {
             rc = HYPERVISOR_mmu_update(mmu_updates, count, NULL, DOMID_SELF);
@@ -704,7 +672,7 @@ void _arch_init_p2m(struct uk_alloc *a)
 	for (pfn = 0; pfn < max_pfn; pfn += P2M_ENTRIES) {
 		if (!(pfn % (P2M_ENTRIES * P2M_ENTRIES))) {
 			l2_list = uk_palloc(a, 1);
-			l3_list[L3_P2M_IDX(pfn)] = virt_to_mfn(l2_list);
+			l3_list[L3_P2M_IDX(pfn)] = pte_to_mfn(uk_virt_to_pte((unsigned long) l2_list));
 			l2_list_pages[L3_P2M_IDX(pfn)] = l2_list;
 		}
 
@@ -712,7 +680,7 @@ void _arch_init_p2m(struct uk_alloc *a)
 			virt_to_mfn(phys_to_machine_mapping + pfn);
 	}
 	HYPERVISOR_shared_info->arch.pfn_to_mfn_frame_list_list =
-		virt_to_mfn(l3_list);
+		pte_to_mfn(uk_virt_to_pte((unsigned long) l3_list));
 	HYPERVISOR_shared_info->arch.max_pfn = max_pfn;
 }
 

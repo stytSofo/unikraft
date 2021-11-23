@@ -426,8 +426,7 @@ struct uk_netdev_event_handler {
 struct uk_netdev_data {
 	enum uk_netdev_state state;
 
-	struct uk_netdev_event_handler
-			     rxq_handler[CONFIG_LIBUKNETDEV_MAXNBQUEUES];
+	struct uk_netdev_event_handler *rxq_handler;
 
 	const uint16_t       id;    /**< ID is assigned during registration */
 	const char           *drv_name;
@@ -471,7 +470,7 @@ struct uk_netdev {
 	struct uk_netdev_einfo *_einfo;
 
 #if (CONFIG_UK_NETDEV_SCRATCH_SIZE > 0)
-	char scratch_pad[CONFIG_UK_NETDEV_SCRATCH_SIZE];
+	char *scratch_pad;
 #endif /* CONFIG_UK_NETDEV_SCRATCH_SIZE */
 };
 

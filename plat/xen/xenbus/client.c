@@ -40,6 +40,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <flexos/isolation.h>
 #include <uk/errptr.h>
 #include <uk/wait.h>
 #include <xenbus/xs.h>
@@ -126,7 +127,7 @@ int xenbus_watch_notify_event(struct xenbus_watch *watch)
 
 	ukarch_spin_lock(&watch->lock);
 	watch->pending_events++;
-	uk_waitq_wake_up(&watch->wq);
+	flexos_gate(libuksched, uk_waitq_wake_up, &watch->wq);
 	ukarch_spin_unlock(&watch->lock);
 
 	return 0;

@@ -14,3 +14,4 @@ uk_realloc_compat
 uk_palloc_compat
 uk_pfree_compat
 _uk_alloc_head
+flexos_shared_alloc

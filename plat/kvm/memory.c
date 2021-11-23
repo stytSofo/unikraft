@@ -19,7 +19,7 @@
  * CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <uk/plat/common/sections.h>
+#include <uk/sections.h>
 #include <sys/types.h>
 #include <uk/plat/memory.h>
 #include <uk/assert.h>
@@ -27,7 +27,7 @@
 
 int ukplat_memregion_count(void)
 {
-	return (9
+	return (10
 		+ ((_libkvmplat_cfg.initrd.len > 0) ? 1 : 0)
 		+ ((_libkvmplat_cfg.heap2.len  > 0) ? 1 : 0));
 }
@@ -91,7 +91,7 @@ int ukplat_memregion_get(int i, struct ukplat_memregion_desc *m)
 #endif
 		ret = 0;
 		break;
-	case 5: /* data */
+	case 5: /* shared */
 		m->base  = (void *) __DATA;
 		m->len   = (size_t) __EDATA - (size_t) __DATA;
 		m->flags = (UKPLAT_MEMRF_RESERVED
@@ -102,7 +102,18 @@ int ukplat_memregion_get(int i, struct ukplat_memregion_desc *m)
 #endif
 		ret = 0;
 		break;
-	case 6: /* bss */
+	case 6: /* data */
+		m->base  = (void *) __DATA;
+		m->len   = (size_t) __EDATA - (size_t) __DATA;
+		m->flags = (UKPLAT_MEMRF_RESERVED
+			    | UKPLAT_MEMRF_READABLE
+			    | UKPLAT_MEMRF_WRITABLE);
+#if CONFIG_UKPLAT_MEMRNAME
+		m->name  = "data";
+#endif
+		ret = 0;
+		break;
+	case 7: /* bss */
 		m->base  = (void *) __BSS_START;
 		m->len   = (size_t) __END - (size_t) __BSS_START;
 		m->flags = (UKPLAT_MEMRF_RESERVED
@@ -113,7 +124,7 @@ int ukplat_memregion_get(int i, struct ukplat_memregion_desc *m)
 #endif
 		ret = 0;
 		break;
-	case 7: /* heap */
+	case 8: /* heap */
 		m->base  = (void *) _libkvmplat_cfg.heap.start;
 		m->len   = _libkvmplat_cfg.heap.len;
 		m->flags = UKPLAT_MEMRF_ALLOCATABLE;
@@ -122,7 +133,7 @@ int ukplat_memregion_get(int i, struct ukplat_memregion_desc *m)
 #endif
 		ret = 0;
 		break;
-	case 8: /* stack */
+	case 9: /* stack */
 		m->base  = (void *) _libkvmplat_cfg.bstack.start;
 		m->len   = _libkvmplat_cfg.bstack.len;
 		m->flags = (UKPLAT_MEMRF_RESERVED
@@ -133,7 +144,7 @@ int ukplat_memregion_get(int i, struct ukplat_memregion_desc *m)
 		m->name  = "bstack";
 #endif
 		break;
-	case 9: /* initrd */
+	case 10: /* initrd */
 		if (_libkvmplat_cfg.initrd.len) {
 			m->base  = (void *) _libkvmplat_cfg.initrd.start;
 			m->len   = _libkvmplat_cfg.initrd.len;
@@ -146,7 +157,7 @@ int ukplat_memregion_get(int i, struct ukplat_memregion_desc *m)
 			break;
 		}
 		/* fall-through */
-	case 10: /* heap2
+	case 11: /* heap2
 		 *  NOTE: heap2 could only exist if initrd was there,
 		 *  otherwise we fall through */
 		if (_libkvmplat_cfg.initrd.len && _libkvmplat_cfg.heap2.len) {

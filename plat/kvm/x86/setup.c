@@ -27,7 +27,7 @@
  */
 
 #include <string.h>
-#include <uk/plat/common/sections.h>
+#include <uk/sections.h>
 #include <x86/cpu.h>
 #include <x86/traps.h>
 #include <kvm/config.h>
@@ -36,10 +36,15 @@
 #include <kvm-x86/multiboot.h>
 #include <kvm-x86/multiboot_defs.h>
 #include <uk/arch/limits.h>
+#include <uk/mem_layout.h>
 #include <uk/arch/types.h>
 #include <uk/plat/console.h>
 #include <uk/assert.h>
 #include <uk/essentials.h>
+
+#if CONFIG_PT_API
+#include <uk/plat/mm.h>
+#endif /* CONFIG_PT_API */
 
 #define PLATFORM_MEM_START 0x100000
 #define PLATFORM_MAX_MEM_ADDR 0x40000000
@@ -73,6 +78,37 @@ static inline void _mb_get_cmdline(struct multiboot_info *mi)
 	cmdline[(sizeof(cmdline) - 1)] = '\0';
 }
 
+static inline void _mb_init_initrd2(struct multiboot_info *mi)
+{
+	multiboot_module_t *mod1;
+
+	/*
+	 * Search for initrd (called boot module according multiboot)
+	 */
+	if (mi->mods_count == 0) {
+		uk_pr_debug("No initrd present\n");
+		return;
+	}
+
+	/*
+	 * NOTE: We are only taking the first boot module as initrd.
+	 *       Initrd arguments and further modules are ignored.
+	 */
+	UK_ASSERT(mi->mods_addr);
+
+	mod1 = (multiboot_module_t *)((uintptr_t) mi->mods_addr);
+	UK_ASSERT(mod1->mod_end >= mod1->mod_start);
+
+	if (mod1->mod_end == mod1->mod_start) {
+		uk_pr_debug("Ignoring empty initrd\n");
+		return;
+	}
+
+	_libkvmplat_cfg.initrd.start = (uintptr_t) mod1->mod_start;
+	_libkvmplat_cfg.initrd.end = (uintptr_t) mod1->mod_end;
+	_libkvmplat_cfg.initrd.len = (size_t) (mod1->mod_end - mod1->mod_start);
+}
+
 static inline void _mb_init_mem(struct multiboot_info *mi)
 {
 	multiboot_memory_map_t *m;
@@ -96,8 +132,10 @@ static inline void _mb_init_mem(struct multiboot_info *mi)
 	 * page tables for.
 	 */
 	max_addr = m->addr + m->len;
+#ifndef CONFIG_DYNAMIC_PT
 	if (max_addr > PLATFORM_MAX_MEM_ADDR)
 		max_addr = PLATFORM_MAX_MEM_ADDR;
+#endif /* CONFIG_DYNAMIC_PT */
 	UK_ASSERT((size_t) __END <= max_addr);
 
 	/*
@@ -106,13 +144,68 @@ static inline void _mb_init_mem(struct multiboot_info *mi)
 	if ((max_addr - m->addr) < __STACK_SIZE)
 		UK_CRASH("Not enough memory to allocate boot stack\n");
 
+	_mb_init_initrd2(mi);
+
+#if CONFIG_DYNAMIC_PT
+	_libkvmplat_cfg.heap.start = HEAP_AREA_START;
+	_libkvmplat_cfg.heap.end   = HEAP_AREA_START
+				     + PAGE_LARGE_ALIGN_DOWN(
+						     m->len
+						     - STACK_AREA_SIZE
+						     - KERNEL_AREA_SIZE
+						     - BOOKKEEP_AREA_SIZE
+						     - _libkvmplat_cfg.initrd.len);
+	_libkvmplat_cfg.heap.len   = _libkvmplat_cfg.heap.end
+				     - _libkvmplat_cfg.heap.start;
+#if CONFIG_LIBPOSIX_MMAP
+	/* TODO: implement a way to dynamically resize the heap (e.g. brk()) */
+	_libkvmplat_cfg.heap.len /= 2;
+	_libkvmplat_cfg.heap.end = _libkvmplat_cfg.heap.start
+				   + _libkvmplat_cfg.heap.len;
+#endif /* CONFIG_LIBPOSIX_MMAP */
+	uk_pt_build(PAGE_ALIGN_UP(m->addr + KERNEL_AREA_SIZE + _libkvmplat_cfg.initrd.len),
+			m->len, KERNEL_AREA_START, KERNEL_AREA_START, KERNEL_AREA_SIZE);
+
+	_libkvmplat_cfg.bstack.start = (uintptr_t) uk_stack_alloc();
+	_libkvmplat_cfg.bstack.end   = _libkvmplat_cfg.bstack.start
+					+ __STACK_SIZE;
+	_libkvmplat_cfg.bstack.len   = __STACK_SIZE;
+
+#else
 	_libkvmplat_cfg.heap.start = ALIGN_UP((uintptr_t) __END, __PAGE_SIZE);
+#if CONFIG_PT_API
+	uk_pt_init(_libkvmplat_cfg.heap.start + _libkvmplat_cfg.initrd.len, PLATFORM_MAX_MEM_ADDR,
+		   m->addr + m->len - max_addr);
+
+	_libkvmplat_cfg.heap.start += BOOKKEEP_AREA_SIZE;
+#endif /* CONFIG_PT_API */
 	_libkvmplat_cfg.heap.end   = (uintptr_t) max_addr - __STACK_SIZE;
 	_libkvmplat_cfg.heap.len   = _libkvmplat_cfg.heap.end
 				     - _libkvmplat_cfg.heap.start;
 	_libkvmplat_cfg.bstack.start = _libkvmplat_cfg.heap.end;
 	_libkvmplat_cfg.bstack.end   = max_addr;
 	_libkvmplat_cfg.bstack.len   = __STACK_SIZE;
+#endif /* CONFIG_DYNAMIC_PT */
+
+	/* TODO rewrite initrd code here nicely */
+	uk_pr_info("Mapping initrd: %p - %p\n", (void*) _libkvmplat_cfg.initrd.start,
+			(void*) ((uintptr_t) _libkvmplat_cfg.initrd.start +
+			         (uintptr_t) ALIGN_UP((_libkvmplat_cfg.initrd.len), __PAGE_SIZE)));
+
+	if (uk_map_region(_libkvmplat_cfg.initrd.start, _libkvmplat_cfg.initrd.start,
+			ALIGN_UP((_libkvmplat_cfg.initrd.len), __PAGE_SIZE) >> PAGE_SHIFT,
+			PAGE_PROT_READ | PAGE_PROT_WRITE, 0))
+		uk_pr_err("Couldn't map initrd\n");
+
+	for (offset = 0; offset < mi->mmap_length;
+	     offset += m->size + sizeof(m->size)) {
+		m = (void *)(__uptr)(mi->mmap_addr + offset);
+		if (m->addr > PLATFORM_MEM_START
+		    && m->type == MULTIBOOT_MEMORY_AVAILABLE) {
+			uk_pt_add_mem(m->addr, m->len);
+		}
+	}
+
 }
 
 static inline void _mb_init_initrd(struct multiboot_info *mi)

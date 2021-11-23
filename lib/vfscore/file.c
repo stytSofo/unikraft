@@ -31,6 +31,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <flexos/isolation.h>
 #include <unistd.h>
 #include <errno.h>
 #include <uk/print.h>
@@ -58,7 +59,7 @@ int fdrop(struct vfscore_file *fp)
 		if (vfs_close(fp) != 0)
 			drele(fp->f_dentry);
 
-		free(fp);
+		flexos_free_whitelist(fp);
 
 		return 1;
 	}

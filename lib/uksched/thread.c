@@ -29,6 +29,7 @@
  * Thread definitions
  * Ported from Mini-OS
  */
+#include <flexos/isolation.h>
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -36,10 +37,26 @@
 #include <uk/plat/time.h>
 #include <uk/thread.h>
 #include <uk/sched.h>
+#include <uk/page.h>
 #include <uk/wait.h>
 #include <uk/print.h>
 #include <uk/assert.h>
 #include <uk/arch/tls.h>
+
+#if CONFIG_LIBUKSIGNAL
+#include <uk/uk_signal.h>
+#endif
+
+#if CONFIG_LIBFLEXOS_INTELPKU
+#include <uk/wait_types.h>
+struct uk_waitq_entry wq_entries[32] __attribute__((flexos_whitelist));
+
+static int uk_num_threads = 0;
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+
+#if CONFIG_LIBFLEXOS_VMEPT
+static int uk_num_threads = 0;
+#endif /* CONFIG_LIBFLEXOS_VMEPT */
 
 /* Pushes the specified value onto the stack of the specified thread */
 static void stack_push(unsigned long *sp, unsigned long value)
@@ -74,6 +91,7 @@ static void reent_init(struct _reent *reent)
 #endif
 }
 
+__attribute__((libc_callback))
 struct _reent *__getreent(void)
 {
 	struct _reent *_reent;
@@ -82,16 +100,58 @@ struct _reent *__getreent(void)
 	if (!s || !uk_sched_started(s))
 		_reent = _impure_ptr;
 	else
-		_reent = &uk_thread_current()->reent;
+		_reent = uk_thread_current()->reent;
 
 	return _reent;
 }
 #endif /* CONFIG_LIBNEWLIBC */
 
-int uk_thread_init(struct uk_thread *thread,
+#if CONFIG_LIBFLEXOS_GATE_INTELPKU_PRIVATE_STACKS
+#define SET_TSB(sp_comp, key) 						\
+do {									\
+	tsb_comp ## key[thread->tid].sp = (sp_comp);			\
+	tsb_comp ## key[thread->tid].bp = (sp_comp);			\
+} while (0)
+#else /* CONFIG_LIBFLEXOS_GATE_INTELPKU_PRIVATE_STACKS */
+/* do nothing without PKU private stacks */
+#define SET_TSB(sp_comp, key)
+#endif /* CONFIG_LIBFLEXOS_GATE_INTELPKU_PRIVATE_STACKS */
+
+#if CONFIG_LIBFLEXOS_INTELPKU
+#define SET_TID_PAGE(stack_comp) 					\
+do {									\
+	*((unsigned long *) round_pgup((unsigned long)			\
+			(stack_comp + 1))) = thread->tid;		\
+} while (0)
+#else
+#define SET_TID_PAGE(sp)
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+
+#define SETUP_STACK(stack_comp, key, a1, a2, sp) 			\
+do {									\
+	if ((stack_comp)) {						\
+		/* Save pointer to the thread on the stack to get */	\
+		/* current thread. */					\
+		/* FIXME FLEXOS PKU in the future this page should be */\
+		/* protected with the permissions of the scheduler */	\
+		/* so that it can't be subverted by a malicious */	\
+		/* compartment */					\
+		*((unsigned long *) (stack_comp)) =			\
+			(unsigned long) thread;				\
+		SET_TID_PAGE(stack_comp);				\
+		init_sp(&sp, (stack_comp), a1, a2);			\
+	}								\
+									\
+	SET_TSB(sp, key);						\
+} while (0)
+
+/* This is a copy of uk_thread_init without manipulations of the PKRU,
+ * for the exact same reasons that we made a copy of uk_sched_thread_create.
+ */
+int uk_thread_init_main(struct uk_thread *thread,
 		struct ukplat_ctx_callbacks *cbs, struct uk_alloc *allocator,
-		const char *name, void *stack, void *tls,
-		void (*function)(void *), void *arg)
+		const char *name, void *stack /* __FLEXOS MARKER__: uk_thread_init decl */,
+		void *tls, void (*function)(void *), void *arg)
 {
 	unsigned long sp;
 
@@ -99,10 +159,20 @@ int uk_thread_init(struct uk_thread *thread,
 	UK_ASSERT(stack != NULL);
 	UK_ASSERT(!have_tls_area() || tls != NULL);
 
-	/* Save pointer to the thread on the stack to get current thread */
-	*((unsigned long *) stack) = (unsigned long) thread;
+#if CONFIG_LIBFLEXOS_INTELPKU
+	thread->tid = uk_num_threads++;
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+#if CONFIG_LIBFLEXOS_VMEPT
+	// FIXME: do this properly, this is terrible
+	thread->tid = uk_num_threads++;
+	thread->ctrl = NULL;
+#endif /* CONFIG_LIBFLEXOS_VMEPT */
+	SETUP_STACK(stack, 0, function, arg, sp);
 
-	init_sp(&sp, stack, function, arg);
+	/* The toolchain is going to insert a number of calls to
+	 * SETUP_STACK depending on the number of compartments, e.g.,
+	 * SETUP_STACK(stack_comp1, 1, NULL, NULL); */
+	/* __FLEXOS MARKER__: insert stack installations here. */
 
 	/* Call platform specific setup. */
 	thread->ctx = ukplat_thread_ctx_create(cbs, allocator, sp,
@@ -112,6 +182,7 @@ int uk_thread_init(struct uk_thread *thread,
 
 	thread->name = name;
 	thread->stack = stack;
+
 	thread->tls = tls;
 
 	/* Not runnable, not exited, not sleeping */
@@ -122,15 +193,114 @@ int uk_thread_init(struct uk_thread *thread,
 	thread->sched = NULL;
 	thread->prv = NULL;
 
+	// FIXME
+	//thread->reent = flexos_malloc_whitelist(sizeof(struct _reent), libc);
+	thread->reent = malloc(sizeof(struct _reent));
+	if (!thread->reent) {
+		flexos_gate(libukdebug, uk_pr_crit, FLEXOS_SHARED_LITERAL(
+				"Could not allocate reent!"));
+		return -1;
+	}
+
+
 #ifdef CONFIG_LIBNEWLIBC
-	reent_init(&thread->reent);
+	reent_init(thread->reent);
 #endif
 #if CONFIG_LIBUKSIGNAL
-	uk_thread_sig_init(&thread->signals_container);
+	thread->signals_container = flexos_malloc_whitelist(sizeof(struct uk_thread_sig), libuksched);
+	uk_thread_sig_init(thread->signals_container);
 #endif
 
-	uk_pr_info("Thread \"%s\": pointer: %p, stack: %p, tls: %p\n",
-		   name, thread, thread->stack, thread->tls);
+	uk_pr_info("Thread \"%s\": pointer: %p, stack: %p - %p, tls: %p\n",
+		   name, thread, stack, (void *) ((uintptr_t) stack + STACK_SIZE), tls);
+
+	return 0;
+}
+
+int uk_thread_init(struct uk_thread *thread,
+		struct ukplat_ctx_callbacks *cbs, struct uk_alloc *allocator,
+		const char *name, void *stack /* __FLEXOS MARKER__: uk_thread_init decl */,
+		void *tls, void (*function)(void *), void *arg)
+{
+	unsigned long sp;
+
+	UK_ASSERT(thread != NULL);
+	UK_ASSERT(stack != NULL);
+	UK_ASSERT(!have_tls_area() || tls != NULL);
+
+#if CONFIG_LIBFLEXOS_INTELPKU
+	thread->tid = uk_num_threads++;
+
+	/* FIXME FLEXOS these wrpkru()s are vulnerable to ROP, we have to
+	 * use properly checked doors. */
+	unsigned long pkru = rdpkru();
+	wrpkru(0x0);
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+#if CONFIG_LIBFLEXOS_VMEPT
+	// FIXME: do this properly, this is terrible
+	thread->tid = uk_num_threads++;
+	thread->ctrl = NULL;
+#endif /* CONFIG_LIBFLEXOS_VMEPT */
+
+	SETUP_STACK(stack, 0, function, arg, sp);
+
+	/* The toolchain is going to insert a number of calls to
+	 * SETUP_STACK depending on the number of compartments, e.g.,
+	 * SETUP_STACK(stack_comp1, 1, NULL, NULL); */
+	/* __FLEXOS MARKER__: insert stack installations here. */
+
+	/* Call platform specific setup. */
+	thread->ctx = ukplat_thread_ctx_create(cbs, allocator, sp,
+			(uintptr_t)ukarch_tls_pointer(tls));
+
+#if CONFIG_LIBFLEXOS_INTELPKU
+	wrpkru(pkru);
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+
+	if (thread->ctx == NULL)
+		return -1;
+
+	thread->name = name;
+	thread->stack = stack;
+
+	thread->tls = tls;
+
+	/* Not runnable, not exited, not sleeping */
+	thread->flags = 0;
+	thread->wakeup_time = 0LL;
+	thread->detached = false;
+	uk_waitq_init(&thread->waiting_threads);
+	thread->sched = NULL;
+	thread->prv = NULL;
+
+	// FIXME
+	//thread->reent = flexos_malloc_whitelist(sizeof(struct _reent), libc);
+	thread->reent = malloc(sizeof(struct _reent));
+	if (!thread->reent) {
+		flexos_gate(libukdebug, uk_pr_crit, FLEXOS_SHARED_LITERAL(
+				"Could not allocate reent!"));
+		return -1;
+	}
+
+#ifdef CONFIG_LIBNEWLIBC
+	reent_init(thread->reent);
+#endif
+#if CONFIG_LIBUKSIGNAL
+#if CONFIG_LIBFLEXOS_INTELPKU
+	/* FIXME FLEXOS another hack... */
+	pkru = rdpkru();
+	wrpkru(0x0);
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+	thread->signals_container = flexos_malloc_whitelist(sizeof(struct uk_thread_sig), libuksched);
+	uk_thread_sig_init(thread->signals_container);
+#if CONFIG_LIBFLEXOS_INTELPKU
+	wrpkru(pkru);
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+#endif
+
+	flexos_gate(libukdebug, uk_pr_info, FLEXOS_SHARED_LITERAL(
+		    "Thread \"%s\": pointer: %p, stack: %p - %p, tls: %p\n"),
+		    name, thread, stack, (void *) ((uintptr_t) stack + STACK_SIZE), tls);
 
 	return 0;
 }
@@ -139,9 +309,14 @@ void uk_thread_fini(struct uk_thread *thread, struct uk_alloc *allocator)
 {
 	UK_ASSERT(thread != NULL);
 #if CONFIG_LIBUKSIGNAL
-	uk_thread_sig_uninit(&thread->signals_container);
+	uk_thread_sig_uninit(thread->signals_container);
 #endif
 	ukplat_thread_ctx_destroy(allocator, thread->ctx);
+}
+
+void uk_thread_inherit_signal_mask(struct uk_thread *thread)
+{
+	thread->signals_container->mask = uk_thread_current()->signals_container->mask;
 }
 
 static void uk_thread_block_until(struct uk_thread *thread, __snsec until)
@@ -151,7 +326,7 @@ static void uk_thread_block_until(struct uk_thread *thread, __snsec until)
 	flags = ukplat_lcpu_save_irqf();
 	thread->wakeup_time = until;
 	clear_runnable(thread);
-	uk_sched_thread_blocked(thread->sched, thread);
+	uk_sched_thread_blocked(thread);
 	ukplat_lcpu_restore_irqf(flags);
 }
 
@@ -201,7 +376,31 @@ int uk_thread_wait(struct uk_thread *thread)
 	if (thread->detached)
 		return -EINVAL;
 
-	uk_waitq_wait_event(&thread->waiting_threads, is_exited(thread));
+	do {
+		struct uk_thread *__current;
+		unsigned long flags;
+		DEFINE_WAIT(__wait);
+		if (is_exited(thread))
+			break;
+		for (;;) {
+			__current = uk_thread_current();
+			/* protect the list */
+			flags = ukplat_lcpu_save_irqf();
+			uk_waitq_add(&thread->waiting_threads, __wait);
+			__current->wakeup_time = 0;
+			clear_runnable(__current);
+			uk_sched_thread_blocked(__current);
+			ukplat_lcpu_restore_irqf(flags);
+			if (is_exited(thread))
+				break;
+			uk_sched_yield();
+		}
+		flags = ukplat_lcpu_save_irqf();
+		/* need to wake up */
+		uk_thread_wake(__current);
+		uk_waitq_remove(&thread->waiting_threads, __wait);
+		ukplat_lcpu_restore_irqf(flags);
+	} while (0);
 
 	thread->detached = true;
 

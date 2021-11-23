@@ -25,7 +25,11 @@
 #ifndef __UK_SEMAPHORE_H__
 #define __UK_SEMAPHORE_H__
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
+
 #include <uk/config.h>
+#include <flexos/isolation.h>
 
 #if CONFIG_LIBUKLOCK_SEMAPHORE
 #include <uk/print.h>
@@ -58,7 +62,32 @@ static inline void uk_semaphore_down(struct uk_semaphore *s)
 	UK_ASSERT(s);
 
 	for (;;) {
-		uk_waitq_wait_event(&s->wait, s->count > 0);
+		do {
+			struct uk_thread *__current;
+			unsigned long flags;
+			DEFINE_WAIT(__wait);
+			if (s->count > 0)
+				break;
+			for (;;) {
+				__current = uk_thread_current();
+				/* protect the list */
+				flags = ukplat_lcpu_save_irqf();
+				uk_waitq_add(&s->wait, __wait);
+				flexos_gate(libuksched, uk_thread_set_wakeup_time, __current, 0);
+				flexos_gate(libuksched, clear_runnable, __current);
+				flexos_gate(libuksched, uk_sched_thread_blocked, __current);
+				ukplat_lcpu_restore_irqf(flags);
+				if (s->count > 0)
+					break;
+				flexos_gate(libuksched, uk_sched_yield);
+			}
+			flags = ukplat_lcpu_save_irqf();
+			/* need to wake up */
+			flexos_gate(libuksched, uk_thread_wake, __current);
+			uk_waitq_remove(&s->wait, __wait);
+			ukplat_lcpu_restore_irqf(flags);
+		} while (0);
+
 		irqf = ukplat_lcpu_save_irqf();
 		if (s->count > 0)
 			break;
@@ -104,13 +133,39 @@ static inline __nsec uk_semaphore_down_to(struct uk_semaphore *s,
 	deadline = then + timeout;
 
 	for (;;) {
-		uk_waitq_wait_event_deadline(&s->wait, s->count > 0, deadline);
+		do {
+			struct uk_thread *__current;
+			unsigned long flags;
+			DEFINE_WAIT(__wait);
+			if (s->count > 0)
+				break;
+			for (;;) {
+				__current = uk_thread_current();
+				/* protect the list */
+				flags = ukplat_lcpu_save_irqf();
+				uk_waitq_add(&s->wait, __wait);
+				flexos_gate(libuksched, uk_thread_set_wakeup_time, __current, deadline);
+				flexos_gate(libuksched, clear_runnable, __current);
+				flexos_gate(libuksched, uk_sched_thread_blocked, __current);
+				ukplat_lcpu_restore_irqf(flags);
+				if (s->count > 0 || (deadline && ukplat_monotonic_clock() >= deadline))
+					break;
+				flexos_gate(libuksched, uk_sched_yield);
+			}
+			flags = ukplat_lcpu_save_irqf();
+			/* need to wake up */
+			flexos_gate(libuksched, uk_thread_wake, __current);
+			uk_waitq_remove(&s->wait, __wait);
+			ukplat_lcpu_restore_irqf(flags);
+		} while (0);
+
 		irqf = ukplat_lcpu_save_irqf();
 		if (s->count > 0 || (deadline &&
 				     ukplat_monotonic_clock() >= deadline))
 			break;
 		ukplat_lcpu_restore_irqf(irqf);
 	}
+
 	if (s->count > 0) {
 		s->count--;
 #ifdef UK_SEMAPHORE_DEBUG
@@ -140,7 +195,11 @@ static inline void uk_semaphore_up(struct uk_semaphore *s)
 	uk_pr_debug("Increased semaphore %p to %ld\n",
 		    s, s->count);
 #endif
-	uk_waitq_wake_up(&s->wait);
+	/* Volatile to make sure that the compiler doesn't reorganize
+	 * the code in such a way that the dereference happens in the
+	 * other domain... */
+	volatile struct uk_waitq *wq = &s->wait;
+	flexos_gate(libuksched, uk_waitq_wake_up, wq);
 	ukplat_lcpu_restore_irqf(irqf);
 }
 
@@ -149,5 +208,7 @@ static inline void uk_semaphore_up(struct uk_semaphore *s)
 #endif
 
 #endif /* CONFIG_LIBUKLOCK_SEMAPHORE */
+
+#pragma GCC diagnostic pop
 
 #endif /* __UK_SEMAPHORE_H__ */

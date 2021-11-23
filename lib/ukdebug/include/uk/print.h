@@ -39,19 +39,20 @@
 #include <stdarg.h>
 #include <uk/essentials.h>
 #include <uk/config.h>
+#include <flexos/literals.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #ifdef __LIBNAME__
-#define __STR_LIBNAME__ STRINGIFY(__LIBNAME__)
+#define __STR_LIBNAME__ FLEXOS_SHARED_LITERAL(STRINGIFY(__LIBNAME__))
 #else
 #define __STR_LIBNAME__ (NULL)
 #endif
 
 #ifdef __BASENAME__
-#define __STR_BASENAME__ STRINGIFY(__BASENAME__)
+#define __STR_BASENAME__ FLEXOS_SHARED_LITERAL(STRINGIFY(__BASENAME__))
 #else
 #define __STR_BASENAME__ (NULL)
 #endif
@@ -158,11 +159,45 @@ static inline void uk_printk(int lvl __unused, const char *fmt __unused, ...)
  * Convenience wrapper for uk_printk() and uk_printd()
  * This is similar to the pr_* variants that you find in the Linux kernel
  */
-#define uk_pr_debug(fmt, ...) uk_printd((fmt), ##__VA_ARGS__)
-#define uk_pr_info(fmt, ...)  uk_printk(KLVL_INFO,  (fmt), ##__VA_ARGS__)
-#define uk_pr_warn(fmt, ...)  uk_printk(KLVL_WARN,  (fmt), ##__VA_ARGS__)
-#define uk_pr_err(fmt, ...)   uk_printk(KLVL_ERR,   (fmt), ##__VA_ARGS__)
-#define uk_pr_crit(fmt, ...)  uk_printk(KLVL_CRIT,  (fmt), ##__VA_ARGS__)
+static inline void uk_pr_debug(const char *fmt, ...)
+{
+	va_list argp;
+	va_start(argp, fmt);
+	uk_vprintd(fmt, argp);
+	va_end(argp);
+}
+
+static inline void uk_pr_info(const char *fmt, ...)
+{
+	va_list argp;
+	va_start(argp, fmt);
+	uk_vprintk(KLVL_INFO, fmt, argp);
+	va_end(argp);
+}
+
+static inline void uk_pr_warn(const char *fmt, ...)
+{
+	va_list argp;
+	va_start(argp, fmt);
+	uk_vprintk(KLVL_WARN, fmt, argp);
+	va_end(argp);
+}
+
+static inline void uk_pr_err(const char *fmt, ...)
+{
+	va_list argp;
+	va_start(argp, fmt);
+	uk_vprintk(KLVL_ERR, fmt, argp);
+	va_end(argp);
+}
+
+static inline void uk_pr_crit(const char *fmt, ...)
+{
+	va_list argp;
+	va_start(argp, fmt);
+	uk_vprintk(KLVL_CRIT, fmt, argp);
+	va_end(argp);
+}
 
 /* NOTE: borrowed from OSv */
 #define WARN_STUBBED_ONCE(thing) do { \

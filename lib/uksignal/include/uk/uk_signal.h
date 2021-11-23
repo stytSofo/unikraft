@@ -38,6 +38,8 @@
 #define __UK_UK_SIGNAL_H__
 
 #include <uk/list.h>
+#include <flexos/isolation.h>
+#include <uk/thread.h>
 #include <uk/bits/sigset.h>
 #include <signal.h>
 
@@ -45,7 +47,23 @@
 extern "C" {
 #endif
 
+#if CONFIG_LIBFLEXOS_INTELPKU
+static struct uk_thread_sig *_uk_crr_thread_sig_container(void);
+static struct uk_thread_sig * __attribute__((section(".text_shared")))
+	uk_crr_thread_sig_container(void);
+
+static inline struct uk_thread_sig *_UK_TH_SIG_IMPL(void)
+{
+	if (rdpkru() == 0x0)
+		return _uk_crr_thread_sig_container();
+	else
+		return uk_crr_thread_sig_container();
+}
+
+#define _UK_TH_SIG _UK_TH_SIG_IMPL()
+#else
 #define _UK_TH_SIG uk_crr_thread_sig_container()
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
 
 struct uk_thread;
 
@@ -140,8 +158,6 @@ static inline void uk_remove_proc_signal(int sig)
 	uk_sigdelset(&uk_proc_sig.pending, sig);
 }
 
-/* maybe move to sched */
-struct uk_thread_sig *uk_crr_thread_sig_container(void);
 void uk_sig_init_siginfo(siginfo_t *siginfo, int sig);
 
 /* returns the uk_signal for sig if it is pending on thread */

@@ -36,8 +36,14 @@
 #include <x86/cpu.h>
 #include <x86/traps.h>
 #include <uk/print.h>
+#include <uk/page.h>
 #include <uk/assert.h>
 #include <uk/asmdump.h>
+
+#if CONFIG_LIBFLEXOS_INTELPKU
+#include <uk/plat/memory.h>
+#include <flexos/impl/intelpku.h>
+#endif
 
 /* A general word of caution when writing trap handlers. The platform trap
  * entry code is set up to properly save general-purpose registers (e.g., rsi,
@@ -72,6 +78,11 @@ DECLARE_TRAP   (simd_error,        "SIMD coprocessor error")
 void do_unhandled_trap(int trapnr, char *str, struct __regs *regs,
 		unsigned long error_code)
 {
+#if CONFIG_LIBFLEXOS_INTELPKU
+	/* Reset PKU key to avoid double fault */
+	wrpkru(0x0);
+#endif
+
 	uk_pr_crit("Unhandled Trap %d (%s), error code=0x%lx\n",
 		   trapnr, str, error_code);
 	uk_pr_info("Regs address %p\n", regs);
@@ -99,6 +110,11 @@ static void fault_prologue(void)
 
 void do_gp_fault(struct __regs *regs, long error_code)
 {
+#if CONFIG_LIBFLEXOS_INTELPKU
+	/* Reset PKU key to avoid double fault */
+	wrpkru(0x0);
+#endif
+
 	fault_prologue();
 	uk_pr_crit("GPF rip: %lx, error_code=%lx\n",
 		   regs->rip, error_code);
@@ -113,6 +129,12 @@ void do_gp_fault(struct __regs *regs, long error_code)
 
 void do_page_fault(struct __regs *regs, unsigned long error_code)
 {
+#if CONFIG_LIBFLEXOS_INTELPKU
+	/* Reset PKU key to avoid double fault. Save its value because we
+         * want to dump it later. */
+	unsigned long pku = rdpkru();
+	wrpkru(0x0);
+#endif
 	unsigned long addr = read_cr2();
 
 	fault_prologue();
@@ -120,7 +142,32 @@ void do_page_fault(struct __regs *regs, unsigned long error_code)
 		   "regs %p, sp %lx, our_sp %p, code %lx\n",
 		   addr, regs->rip, regs, regs->rsp, &addr, error_code);
 
+#if CONFIG_LIBFLEXOS_INTELPKU
+	/* PKU fault? */
+	if (error_code & (1 << 5)) {
+		struct ukplat_memregion_desc md;
+		char *mdname = NULL;
+		uk_pr_crit("PF_PK: protection key block access (%s)\n",
+			   error_code & 0x2 ? "WRITE":"READ");
+		ukplat_memregion_foreach(&md, NULL) {
+			if (addr >= md.base && addr < (size_t)md.base + md.len) {
+				mdname = md.name;
+			}
+		}
+		if (!mdname)
+			mdname = "???";
+		uk_pr_crit("Target page %p (section .%s) had key %d\n",
+			(void*) addr, mdname, flexos_intelpku_mem_get_key(
+				addr & ~((__PAGE_SIZE) - 1)));
+	}
+#endif
+
 	dump_regs(regs);
+
+#if CONFIG_LIBFLEXOS_INTELPKU
+	uk_pr_crit("PKU: %016lx\n", pku);
+#endif
+
 	stack_walk_for_frame(regs->rbp);
 	uk_asmdumpk(KLVL_CRIT, (void *) regs->rip, 6);
 	dump_mem(regs->rsp);

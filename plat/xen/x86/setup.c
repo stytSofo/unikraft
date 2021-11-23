@@ -74,6 +74,8 @@
 #include <uk/plat/config.h>
 #include <uk/plat/console.h>
 #include <uk/plat/bootstrap.h>
+#include <uk/plat/mm.h>
+#include <uk/mem_layout.h>
 #include <x86/cpu.h>
 
 #include <xen/xen.h>
@@ -138,29 +140,37 @@ static inline void _init_mem(void)
 	uk_pr_info("     start_pfn: %lx\n", start_pfn);
 	uk_pr_info("       max_pfn: %lx\n", max_pfn);
 
-	_init_mem_build_pagetable(&start_pfn, &max_pfn);
-	_init_mem_clear_bootstrap();
-	_init_mem_set_readonly((void *)__TEXT, (void *)__ERODATA);
+	//_init_mem_build_pagetable(&start_pfn, &max_pfn);
+	//_init_mem_clear_bootstrap();
+	//_init_mem_set_readonly((void *)__TEXT, (void *)__ERODATA);
+	/* TODO(fane) */
+	/* TODO: what to do with initrd on Xen? */
+	uk_pt_build(start_pfn << PAGE_SHIFT, (max_pfn - start_pfn) << PAGE_SHIFT, 0x2000, 0x2000, ukarch_read_pt_base() - 0x2000);
 
 	/* Fill out mrd array */
 	/* heap */
-	_libxenplat_mrd[0].base  = to_virt(start_pfn << __PAGE_SHIFT);
+	_libxenplat_mrd[0].base  = HEAP_AREA_START;
 	_libxenplat_mrd[0].len   = (size_t) to_virt(max_pfn << __PAGE_SHIFT)
-		- (size_t) to_virt(start_pfn << __PAGE_SHIFT);
+		- (size_t) to_virt(start_pfn << __PAGE_SHIFT) - BOOKKEEP_AREA_SIZE;
 	_libxenplat_mrd[0].flags = (UKPLAT_MEMRF_ALLOCATABLE);
+#if CONFIG_LIBPOSIX_MMAP
+	/* TODO(fane) */
+	_libxenplat_mrd[0].len /= 2;
+#endif /* CONFIG_LIBPOSIX_MMAP */
+
 #if CONFIG_UKPLAT_MEMRNAME
 	_libxenplat_mrd[0].name  = "heap";
 #endif
 
 	/* demand area */
-	_libxenplat_mrd[1].base  = (void *) VIRT_DEMAND_AREA;
-	_libxenplat_mrd[1].len   = DEMAND_MAP_PAGES * PAGE_SIZE;
+	_libxenplat_mrd[1].base  = (void *) MAPPINGS_AREA_START;
+	_libxenplat_mrd[1].len   = MAPPINGS_AREA_SIZE;
 	_libxenplat_mrd[1].flags = UKPLAT_MEMRF_RESERVED;
 #if CONFIG_UKPLAT_MEMRNAME
 	_libxenplat_mrd[1].name  = "demand";
 #endif
 	_init_mem_demand_area((unsigned long) _libxenplat_mrd[1].base,
-			DEMAND_MAP_PAGES);
+			MAPPINGS_AREA_SIZE >> PAGE_SHIFT);
 
 	_libxenplat_mrd_num = 2;
 }

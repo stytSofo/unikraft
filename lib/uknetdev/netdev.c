@@ -34,6 +34,7 @@
 #define _GNU_SOURCE /* for asprintf() */
 #include <stdio.h>
 #include <string.h>
+#include <flexos/isolation.h>
 #include <uk/netdev.h>
 #include <uk/print.h>
 #include <uk/libparam.h>
@@ -105,6 +106,10 @@ static struct uk_netdev_data *_alloc_data(struct uk_alloc *a,
 
 	data->drv_name = drv_name;
 	data->state    = UK_NETDEV_UNCONFIGURED;
+	data->rxq_handler = flexos_calloc_whitelist(sizeof(struct uk_netdev_event_handler),
+				CONFIG_LIBUKNETDEV_MAXNBQUEUES);
+	if (!data->rxq_handler)
+		return NULL;
 
 	/* This is the only place where we set the device ID;
 	 * during the rest of the device's life time this ID is read-only
@@ -331,6 +336,7 @@ int uk_netdev_configure(struct uk_netdev *dev,
 }
 
 #ifdef CONFIG_LIBUKNETDEV_DISPATCHERTHREADS
+__attribute__((libc_callback))
 static void _dispatcher(void *arg)
 {
 	struct uk_netdev_event_handler *handler =
@@ -345,6 +351,14 @@ static void _dispatcher(void *arg)
 				  handler->queue_id,
 				  handler->cookie);
 	}
+}
+
+static void dispatcher(void *arg)
+{
+#if CONFIG_LIBFLEXOS_INTELPKU
+	wrpkru(0x3ffffffc);
+#endif
+	_dispatcher(arg);
 }
 #endif
 
@@ -385,9 +399,17 @@ static int _create_event_handler(uk_netdev_queue_event_t callback,
 		h->dispatcher_name = NULL;
 	}
 
-	h->dispatcher = uk_sched_thread_create(h->dispatcher_s,
-					       h->dispatcher_name, NULL,
-					       _dispatcher, h);
+	/* FLEXOS FIXME do we really need all these copies/volatile? */
+	volatile struct uk_sched *sched = h->dispatcher_s;
+	volatile const char *name = h->dispatcher_name;
+	volatile struct uk_netdev_event_handler *hcpy = h;
+	volatile struct uk_thread *disp;
+
+	flexos_gate_r(libuksched, disp, uk_sched_thread_create,
+				sched, name, NULL, dispatcher, hcpy);
+
+	h->dispatcher = disp;
+
 	if (!h->dispatcher) {
 		if (h->dispatcher_name)
 			free(h->dispatcher_name);
@@ -408,8 +430,8 @@ static void _destroy_event_handler(struct uk_netdev_event_handler *h
 	UK_ASSERT(h->dispatcher_s);
 
 	if (h->dispatcher) {
-		uk_thread_kill(h->dispatcher);
-		uk_thread_wait(h->dispatcher);
+		flexos_gate(libuksched, uk_thread_kill, h->dispatcher);
+		flexos_gate(libuksched, uk_thread_wait, h->dispatcher);
 	}
 	h->dispatcher = NULL;
 

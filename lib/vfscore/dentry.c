@@ -34,6 +34,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <flexos/isolation.h>
 
 #include <uk/list.h>
 #include <vfscore/dentry.h>
@@ -45,7 +46,7 @@
 
 static struct uk_hlist_head dentry_hash_table[DENTRY_BUCKETS];
 static UK_HLIST_HEAD(fake);
-static struct uk_mutex dentry_hash_lock = UK_MUTEX_INITIALIZER(dentry_hash_lock);
+static struct uk_mutex dentry_hash_lock __attribute__((flexos_whitelist)) = UK_MUTEX_INITIALIZER(dentry_hash_lock);
 
 /*
  * Get the hash value from the mount point and path name.
@@ -69,13 +70,19 @@ struct dentry *
 dentry_alloc(struct dentry *parent_dp, struct vnode *vp, const char *path)
 {
 	struct mount *mp = vp->v_mount;
-	struct dentry *dp = (struct dentry*)calloc(sizeof(*dp), 1);
+	struct dentry *dp = (struct dentry*)flexos_calloc_whitelist(sizeof(*dp), 1, libuksched);
 
 	if (!dp) {
 		return NULL;
 	}
 
-	dp->d_path = strdup(path);
+	//flexos_gate_r(libc, dp->d_path, strdup, path);
+	size_t size = strlen(path) + 1;
+	dp->d_path = malloc(size);
+	if (dp->d_path) {
+		memcpy(dp->d_path, path, size);
+	}
+
 	if (!dp->d_path) {
 		free(dp);
 		return NULL;
@@ -91,19 +98,19 @@ dentry_alloc(struct dentry *parent_dp, struct vnode *vp, const char *path)
 	if (parent_dp) {
 		dref(parent_dp);
 
-		uk_mutex_lock(&parent_dp->d_lock);
+		flexos_gate(uklock, uk_mutex_lock, &parent_dp->d_lock);
 		// Insert dp into its parent's children list.
 		uk_list_add(&dp->d_child_link, &parent_dp->d_child_list);
-		uk_mutex_unlock(&parent_dp->d_lock);
+		flexos_gate(uklock, uk_mutex_unlock, &parent_dp->d_lock);
 	}
 	dp->d_parent = parent_dp;
 
 	vn_add_name(vp, dp);
 
-	uk_mutex_lock(&dentry_hash_lock);
+	flexos_gate(uklock, uk_mutex_lock, &dentry_hash_lock);
 	uk_hlist_add_head(&dp->d_link,
 			  &dentry_hash_table[dentry_hash(mp, path)]);
-	uk_mutex_unlock(&dentry_hash_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &dentry_hash_lock);
 	return dp;
 };
 
@@ -112,15 +119,15 @@ dentry_lookup(struct mount *mp, char *path)
 {
 	struct dentry *dp;
 
-	uk_mutex_lock(&dentry_hash_lock);
+	flexos_gate(uklock, uk_mutex_lock, &dentry_hash_lock);
 	uk_hlist_for_each_entry(dp, &dentry_hash_table[dentry_hash(mp, path)], d_link) {
 		if (dp->d_mount == mp && !strncmp(dp->d_path, path, PATH_MAX)) {
 			dp->d_refcnt++;
-			uk_mutex_unlock(&dentry_hash_lock);
+			flexos_gate(uklock, uk_mutex_unlock, &dentry_hash_lock);
 			return dp;
 		}
 	}
-	uk_mutex_unlock(&dentry_hash_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &dentry_hash_lock);
 	return NULL;                /* not found */
 }
 
@@ -128,13 +135,13 @@ static void dentry_children_remove(struct dentry *dp)
 {
 	struct dentry *entry = NULL;
 
-	uk_mutex_lock(&dp->d_lock);
+	flexos_gate(uklock, uk_mutex_lock, &dp->d_lock);
 	uk_list_for_each_entry(entry, &dp->d_child_list, d_child_link) {
 		UK_ASSERT(entry);
 		UK_ASSERT(entry->d_refcnt > 0);
 		uk_hlist_del(&entry->d_link);
 	}
-	uk_mutex_unlock(&dp->d_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &dp->d_lock);
 
 }
 
@@ -151,22 +158,22 @@ dentry_move(struct dentry *dp, struct dentry *parent_dp, char *path)
 	}
 
 	if (old_pdp) {
-		uk_mutex_lock(&old_pdp->d_lock);
+		flexos_gate(uklock, uk_mutex_lock, &old_pdp->d_lock);
 		// Remove dp from its old parent's children list.
 		uk_list_del(&dp->d_child_link);
-		uk_mutex_unlock(&old_pdp->d_lock);
+		flexos_gate(uklock, uk_mutex_unlock, &old_pdp->d_lock);
 	}
 
 	if (parent_dp) {
 		dref(parent_dp);
 
-		uk_mutex_lock(&parent_dp->d_lock);
+		flexos_gate(uklock, uk_mutex_lock, &parent_dp->d_lock);
 		// Insert dp into its new parent's children list.
 		uk_list_add(&dp->d_child_link, &parent_dp->d_child_list);
-		uk_mutex_unlock(&parent_dp->d_lock);
+		flexos_gate(uklock, uk_mutex_unlock, &parent_dp->d_lock);
 	}
 
-	uk_mutex_lock(&dentry_hash_lock);
+	flexos_gate(uklock, uk_mutex_lock, &dentry_hash_lock);
 	// Remove all dp's child dentries from the hashtable.
 	dentry_children_remove(dp);
 	// Remove dp with outdated hash info from the hashtable.
@@ -178,7 +185,7 @@ dentry_move(struct dentry *dp, struct dentry *parent_dp, char *path)
 	// Insert dp updated hash info into the hashtable.
 	uk_hlist_add_head(&dp->d_link,
 			  &dentry_hash_table[dentry_hash(dp->d_mount, path)]);
-	uk_mutex_unlock(&dentry_hash_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &dentry_hash_lock);
 
 	if (old_pdp) {
 		drele(old_pdp);
@@ -191,11 +198,11 @@ dentry_move(struct dentry *dp, struct dentry *parent_dp, char *path)
 void
 dentry_remove(struct dentry *dp)
 {
-	uk_mutex_lock(&dentry_hash_lock);
+	flexos_gate(uklock, uk_mutex_lock, &dentry_hash_lock);
 	uk_hlist_del(&dp->d_link);
 	/* put it on a fake list for drele() to work*/
 	uk_hlist_add_head(&dp->d_link, &fake);
-	uk_mutex_unlock(&dentry_hash_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &dentry_hash_lock);
 }
 
 void
@@ -204,9 +211,9 @@ dref(struct dentry *dp)
 	UK_ASSERT(dp);
 	UK_ASSERT(dp->d_refcnt > 0);
 
-	uk_mutex_lock(&dentry_hash_lock);
+	flexos_gate(uklock, uk_mutex_lock, &dentry_hash_lock);
 	dp->d_refcnt++;
-	uk_mutex_unlock(&dentry_hash_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &dentry_hash_lock);
 }
 
 void
@@ -215,21 +222,21 @@ drele(struct dentry *dp)
 	UK_ASSERT(dp);
 	UK_ASSERT(dp->d_refcnt > 0);
 
-	uk_mutex_lock(&dentry_hash_lock);
+	flexos_gate(uklock, uk_mutex_lock, &dentry_hash_lock);
 	if (--dp->d_refcnt) {
-		uk_mutex_unlock(&dentry_hash_lock);
+		flexos_gate(uklock, uk_mutex_unlock, &dentry_hash_lock);
 		return;
 	}
 	uk_hlist_del(&dp->d_link);
 	vn_del_name(dp->d_vnode, dp);
 
-	uk_mutex_unlock(&dentry_hash_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &dentry_hash_lock);
 
 	if (dp->d_parent) {
-		uk_mutex_lock(&dp->d_parent->d_lock);
+		flexos_gate(uklock, uk_mutex_lock, &dp->d_parent->d_lock);
 		// Remove dp from its parent's children list.
 		uk_list_del(&dp->d_child_link);
-		uk_mutex_unlock(&dp->d_parent->d_lock);
+		flexos_gate(uklock, uk_mutex_unlock, &dp->d_parent->d_lock);
 
 		drele(dp->d_parent);
 	}
@@ -237,7 +244,7 @@ drele(struct dentry *dp)
 	vrele(dp->d_vnode);
 
 	free(dp->d_path);
-	free(dp);
+	flexos_free_whitelist(dp, libuksched);
 }
 
 void

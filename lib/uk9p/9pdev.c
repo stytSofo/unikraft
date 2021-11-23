@@ -32,6 +32,7 @@
 
 #include <stdbool.h>
 #include <string.h>
+#include <flexos/isolation.h>
 #include <uk/config.h>
 #include <uk/plat/spinlock.h>
 #include <uk/alloc.h>
@@ -229,7 +230,7 @@ struct uk_9pdev *uk_9pdev_connect(const struct uk_9pdev_trans *trans,
 	dev->a = a;
 
 #if CONFIG_LIBUKSCHED
-	uk_waitq_init(&dev->xmit_wq);
+	flexos_gate(libuksched, uk_waitq_init, &dev->xmit_wq);
 #endif
 
 	_req_mgmt_init(&dev->_req_mgmt);
@@ -299,8 +300,31 @@ int uk_9pdev_request(struct uk_9pdev *dev, struct uk_9preq *req)
 	}
 
 #if CONFIG_LIBUKSCHED
-	uk_waitq_wait_event(&dev->xmit_wq,
-		(rc = dev->ops->request(dev, req)) != -ENOSPC);
+	do {
+		struct uk_thread *__current;
+		unsigned long flags;
+		DEFINE_WAIT(__wait);
+		if ((rc = dev->ops->request(dev, req)) != -ENOSPC)
+			break;
+		for (;;) {
+			__current = uk_thread_current();
+			/* protect the list */
+			flags = ukplat_lcpu_save_irqf();
+			uk_waitq_add(&dev->xmit_wq, __wait);
+			flexos_gate(libuksched, uk_thread_set_wakeup_time, __current, 0);
+			flexos_gate(libuksched, clear_runnable, __current);
+			flexos_gate(libuksched, uk_sched_thread_blocked, __current);
+			ukplat_lcpu_restore_irqf(flags);
+			if ((rc = dev->ops->request(dev, req)) != -ENOSPC)
+				break;
+			flexos_gate(libuksched, uk_sched_yield);
+		}
+		flags = ukplat_lcpu_save_irqf();
+		/* need to wake up */
+		flexos_gate(libuksched, uk_thread_wake, __current);
+		uk_waitq_remove(&dev->xmit_wq, __wait);
+		ukplat_lcpu_restore_irqf(flags);
+	} while (0);
 #else
 	do {
 		/*
@@ -318,7 +342,7 @@ out:
 void uk_9pdev_xmit_notify(struct uk_9pdev *dev)
 {
 #if CONFIG_LIBUKSCHED
-	uk_waitq_wake_up(&dev->xmit_wq);
+	flexos_gate(libuksched, uk_waitq_wake_up, &dev->xmit_wq);
 #endif
 }
 

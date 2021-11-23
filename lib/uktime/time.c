@@ -33,6 +33,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <flexos/isolation.h>
 #include <errno.h>
 #include <time.h>
 #include <utime.h>
@@ -49,6 +50,41 @@
 #include <uk/plat/lcpu.h>
 #endif
 #include <uk/essentials.h>
+
+/* FIXME FLEXOS: Coccinelle doesn't want to do a gate transformation at several
+ * places in this file because of the UK_SYSCALL_DEFINE()... this is not
+ * recognized as a function and Coccinelle aborts. Get rid of these of these
+ * manual wrappers at some point or change it to something cleaner. */
+
+static inline __nsec ukplat_monotonic_clock_wrapper(void)
+{
+	__nsec now;
+	flexos_gate_r(libukplat, now, ukplat_monotonic_clock);
+	return now;
+}
+
+static inline __nsec ukplat_wall_clock_wrapper(void)
+{
+	__nsec now;
+	flexos_gate_r(libukplat, now, ukplat_wall_clock);
+	return now;
+}
+
+void ukplat_lcpu_halt_to(__snsec until);
+static inline void ukplat_lcpu_halt_to_wrapper(__snsec until)
+{
+	flexos_gate(libukplat, ukplat_lcpu_halt_to, until);
+}
+
+static inline void uk_sched_thread_sleep_wrapper(__nsec nsec)
+{
+	flexos_gate(libuksched, uk_sched_thread_sleep, nsec);
+}
+
+#define ukplat_monotonic_clock(...) ukplat_monotonic_clock_wrapper()
+#define ukplat_wall_clock(...) ukplat_wall_clock_wrapper()
+#define ukplat_lcpu_halt_to(until) ukplat_lcpu_halt_to_wrapper(until)
+#define uk_sched_thread_sleep(nsec) uk_sched_thread_sleep_wrapper(nsec)
 
 int utime(const char *filename __unused, const struct utimbuf *times __unused)
 {
@@ -192,3 +228,8 @@ int setitimer(int which __unused, const struct itimerval *new_value __unused,
 	WARN_STUBBED();
 	return 0;
 }
+
+#undef ukplat_monotonic_clock
+#undef ukplat_wall_clock
+#undef ukplat_lcpu_halt_to
+#undef uk_sched_thread_sleep

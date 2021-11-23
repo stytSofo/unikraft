@@ -39,6 +39,7 @@
  */
 
 #include <string.h>
+#include <flexos/isolation.h>
 #include <uk/errptr.h>
 #include <uk/bitmap.h>
 #include <uk/wait.h>
@@ -129,13 +130,13 @@ static void xs_request_pool_init(struct xs_request_pool *pool)
 	pool->num_live = 0;
 	pool->last_probed = -1;
 	ukarch_spin_lock_init(&pool->lock);
-	uk_waitq_init(&pool->waitq);
+	flexos_gate(libuksched, uk_waitq_init, &pool->waitq);
 	UK_TAILQ_INIT(&pool->queued);
 	uk_bitmap_zero(pool->entries_bm, XS_REQ_POOL_SIZE);
 	for (int i = 0; i < XS_REQ_POOL_SIZE; i++) {
 		xs_req = &pool->entries[i];
 		xs_req->hdr.req_id = i;
-		uk_waitq_init(&xs_req->waitq);
+		flexos_gate(libuksched, uk_waitq_init, &xs_req->waitq);
 	}
 }
 
@@ -191,7 +192,7 @@ static void xs_request_put(struct xs_request *xs_req)
 	xs_req_pool.num_live--;
 
 	if (xs_req_pool.num_live == XS_REQ_POOL_SIZE - 1)
-		uk_waitq_wake_up(&xs_req_pool.waitq);
+		flexos_gate(libuksched, uk_waitq_wake_up, &xs_req_pool.waitq);
 
 	ukarch_spin_unlock(&xs_req_pool.lock);
 }
@@ -358,7 +359,7 @@ int xs_msg_reply(enum xsd_sockmsg_type msg_type, xenbus_transaction_t xbt,
 	/* enqueue the request */
 	xs_request_enqueue(xs_req);
 	/* wake xenstore thread to send it */
-	uk_waitq_wake_up(&xsh.waitq);
+	flexos_gate(libuksched, uk_waitq_wake_up, &xsh.waitq);
 
 	/* wait reply */
 	uk_waitq_wait_event(&xs_req->waitq,
@@ -453,7 +454,7 @@ static void process_reply(struct xsd_sockmsg *hdr, char *payload)
 	xs_req->reply.recvd = 1;
 
 	/* notify waiting requester */
-	uk_waitq_wake_up(&xs_req->waitq);
+	flexos_gate(libuksched, uk_waitq_wake_up, &xs_req->waitq);
 }
 
 /* Process an incoming xs watch event */
@@ -576,7 +577,7 @@ static void xs_evtchn_handler(evtchn_port_t port,
 		struct __regs *regs __unused, void *ign __unused)
 {
 	UK_ASSERT(xsh.evtchn == port);
-	uk_waitq_wake_up(&xsh.waitq);
+	flexos_gate(libuksched, uk_waitq_wake_up, &xsh.waitq);
 }
 
 int xs_comms_init(void)
@@ -586,7 +587,7 @@ int xs_comms_init(void)
 
 	xs_request_pool_init(&xs_req_pool);
 
-	uk_waitq_init(&xsh.waitq);
+	flexos_gate(libuksched, uk_waitq_init, &xsh.waitq);
 
 	thread = uk_thread_create("xenstore", xs_thread_func, NULL);
 	if (PTRISERR(thread))
@@ -615,6 +616,6 @@ void xs_comms_fini(void)
 	xsh.buf = NULL;
 
 	/* TODO stop thread, instead of killing it */
-	uk_thread_kill(xsh.thread);
+	flexos_gate(libuksched, uk_thread_kill, xsh.thread);
 	xsh.thread = NULL;
 }

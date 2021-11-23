@@ -25,7 +25,7 @@
 #ifndef _ARCH_MM_H_
 #define _ARCH_MM_H_
 
-#include <uk/plat/common/sections.h>
+#include <uk/sections.h>
 #ifndef __ASSEMBLY__
 #include <xen/xen.h>
 #if defined(__i386__)
@@ -45,6 +45,8 @@
 #ifdef CONFIG_PARAVIRT
 #include <xen-x86/mm_pv.h>
 #endif
+
+#include <uk/plat/mm.h>
 
 /*
  * Physical address space usage:
@@ -108,22 +110,8 @@ typedef uint64_t pgentry_t;
 
 #elif defined(__x86_64__)
 
-#define L2_PAGETABLE_SHIFT      21
-#define L3_PAGETABLE_SHIFT      30
-#define L4_PAGETABLE_SHIFT      39
-
-#define L1_PAGETABLE_ENTRIES    512
-#define L2_PAGETABLE_ENTRIES    512
-#define L3_PAGETABLE_ENTRIES    512
-#define L4_PAGETABLE_ENTRIES    512
-
-#define PAGETABLE_LEVELS        4
-
 /* These are page-table limitations. Current CPUs support only 40-bit phys. */
-#define PADDR_BITS              52
 #define VADDR_BITS              48
-#define PADDR_MASK              ((1UL << PADDR_BITS)-1)
-#define VADDR_MASK              ((1UL << VADDR_BITS)-1)
 
 #define L2_MASK  ((1UL << L3_PAGETABLE_SHIFT) - 1)
 #define L3_MASK  ((1UL << L4_PAGETABLE_SHIFT) - 1)
@@ -165,38 +153,18 @@ typedef unsigned long pgentry_t;
   (((_a) >> L4_PAGETABLE_SHIFT) & (L4_PAGETABLE_ENTRIES - 1))
 #endif
 
-#define _PAGE_PRESENT  CONST(0x001)
-#define _PAGE_RW       CONST(0x002)
-#define _PAGE_USER     CONST(0x004)
-#define _PAGE_PWT      CONST(0x008)
-#define _PAGE_PCD      CONST(0x010)
-#define _PAGE_ACCESSED CONST(0x020)
-#define _PAGE_DIRTY    CONST(0x040)
-#define _PAGE_PAT      CONST(0x080)
-#define _PAGE_PSE      CONST(0x080)
-#define _PAGE_GLOBAL   CONST(0x100)
-
 #if defined(__i386__)
 #define L1_PROT (_PAGE_PRESENT|_PAGE_RW|_PAGE_ACCESSED)
 #define L1_PROT_RO (_PAGE_PRESENT|_PAGE_ACCESSED)
 #define L2_PROT (_PAGE_PRESENT|_PAGE_RW|_PAGE_ACCESSED|_PAGE_DIRTY |_PAGE_USER)
 #define L3_PROT (_PAGE_PRESENT)
-#elif defined(__x86_64__)
-#define L1_PROT (_PAGE_PRESENT|_PAGE_RW|_PAGE_ACCESSED|_PAGE_USER)
-#define L1_PROT_RO (_PAGE_PRESENT|_PAGE_ACCESSED|_PAGE_USER)
-#define L2_PROT (_PAGE_PRESENT|_PAGE_RW|_PAGE_ACCESSED|_PAGE_DIRTY|_PAGE_USER)
-#define L3_PROT (_PAGE_PRESENT|_PAGE_RW|_PAGE_ACCESSED|_PAGE_DIRTY|_PAGE_USER)
-#define L4_PROT (_PAGE_PRESENT|_PAGE_RW|_PAGE_ACCESSED|_PAGE_DIRTY|_PAGE_USER)
-#endif /* __i386__ || __x86_64__ */
+#endif
 
 /* flags for ioremap */
 #define IO_PROT (L1_PROT)
 #define IO_PROT_NOCACHE (L1_PROT | _PAGE_PCD)
 
 #include <uk/arch/limits.h>
-#define PAGE_SIZE       __PAGE_SIZE
-#define PAGE_SHIFT      __PAGE_SHIFT
-#define PAGE_MASK       __PAGE_MASK
 
 #define PFN_UP(x)	(((x) + PAGE_SIZE-1) >> L1_PAGETABLE_SHIFT)
 #define PFN_DOWN(x)	((x) >> L1_PAGETABLE_SHIFT)
@@ -244,7 +212,8 @@ static __inline__ paddr_t machine_to_phys(maddr_t machine)
 #define to_virt(x)                 ((void *)((unsigned long)(x)+VIRT_START))
 
 #define virt_to_pfn(_virt)         (PFN_DOWN(to_phys(_virt)))
-#define virt_to_mfn(_virt)         (pfn_to_mfn(virt_to_pfn(_virt)))
+// TODO(fane)
+#define virt_to_mfn(virt) 	   (PTE_REMOVE_FLAGS(uk_virt_to_pte(PAGE_ALIGN_DOWN((unsigned long) virt))) >> L1_PAGETABLE_SHIFT)
 #define mach_to_virt(_mach)        (to_virt(machine_to_phys(_mach)))
 #define virt_to_mach(_virt)        (phys_to_machine(to_phys(_virt)))
 #define mfn_to_virt(_mfn)          (to_virt(mfn_to_pfn(_mfn) << PAGE_SHIFT))

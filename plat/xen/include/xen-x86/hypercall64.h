@@ -40,9 +40,7 @@
 #include <xen/xen.h>
 #include <xen/sched.h>
 
-#define PAGE_SHIFT       __PAGE_SHIFT
-#define PAGE_MASK        __PAGE_MASK
-#define PAGE_SIZE        __PAGE_SIZE
+#include <uk/asm/mm.h>
 
 #define STACK_SIZE_PAGE_ORDER  __STACK_SIZE_PAGE_ORDER
 #define STACK_SIZE             __STACK_SIZE

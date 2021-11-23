@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <flexos/isolation.h>
 #include <uk/print.h>
 #include <uk/assert.h>
 #include <uk/essentials.h>
@@ -156,7 +157,9 @@ struct virtio_net_device {
 	/* The mtu */
 	__u16 mtu;
 	/* The hw address of the netdevice */
-	struct uk_hwaddr hw_addr;
+	/* NOTE FLEXOS: as a pointer here, we want to be able to share
+	 * this with lwip */
+	struct uk_hwaddr *hw_addr;
 	/*  Netdev state */
 	__u8 state;
 	/* RX promiscuous mode. */
@@ -818,7 +821,7 @@ static const struct uk_hwaddr *virtio_net_mac_get(struct uk_netdev *n)
 
 	UK_ASSERT(n);
 	d = to_virtionetdev(n);
-	return &d->hw_addr;
+	return d->hw_addr;
 }
 
 static __u16 virtio_net_mtu_get(struct uk_netdev *n)
@@ -865,7 +868,7 @@ static int virtio_netdev_feature_negotiate(struct virtio_net_device *vndev)
 	 */
 	hw_len = virtio_config_get(vndev->vdev,
 				   __offsetof(struct virtio_net_config, mac),
-				   &vndev->hw_addr.addr_bytes[0],
+				   &vndev->hw_addr->addr_bytes[0],
 				   UK_NETDEV_HWADDR_LEN, 1);
 	if (unlikely(hw_len != UK_NETDEV_HWADDR_LEN)) {
 		uk_pr_err("Failed to retrieve the mac address from device\n");
@@ -1131,6 +1134,10 @@ static int virtio_net_add_dev(struct virtio_dev *vdev)
 	vndev->netdev.rx_one = virtio_netdev_recv;
 	vndev->netdev.tx_one = virtio_netdev_xmit;
 	vndev->netdev.ops = &virtio_netdev_ops;
+	vndev->hw_addr = flexos_calloc_whitelist(1, sizeof(*(vndev->hw_addr)));
+	/* TODO FLEXOS: investigate, can we actually put this in lwip's domain
+	 * instead of the shared one? */
+	vndev->netdev.scratch_pad = flexos_calloc_whitelist(1, __PAGE_SIZE);
 
 	rc = uk_netdev_drv_register(&vndev->netdev, a, drv_name);
 	if (rc < 0) {
@@ -1148,6 +1155,8 @@ static int virtio_net_add_dev(struct virtio_dev *vdev)
 exit:
 	return rc;
 err_netdev_data:
+        flexos_free_whitelist(vndev->hw_addr);
+        flexos_free_whitelist(vndev->netdev.scratch_pad);
 	uk_free(a, vndev);
 err_out:
 	goto exit;

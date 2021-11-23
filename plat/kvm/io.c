@@ -1,8 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause */
 /*
  * Authors: Sharan Santhanam <sharan.santhanam@neclab.eu>
+ *          Stefan Teodorescu <stefanl.teodorescu@gmail.com>
  *
  * Copyright (c) 2018, NEC Europe Ltd., NEC Corporation. All rights reserved.
+ * Copyright (c) 2020, University Politehnica of Bucharest., NEC Corporation. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,13 +33,29 @@
  */
 
 #include <uk/plat/io.h>
+#include <uk/config.h>
 
-/**
- * TODO:
- * For our kvm platform, the guest virtual address == guest physical address.
- * We may have to reconsider this implementation when condition changes.
- */
+#ifdef CONFIG_PT_API
+#include <uk/plat/mm.h>
+#endif
+
 __phys_addr ukplat_virt_to_phys(const volatile void *address)
 {
+#ifdef CONFIG_PT_API
+	unsigned long vaddr = address;
+	unsigned long pte = uk_virt_to_pte(PAGE_ALIGN_DOWN(vaddr));
+	unsigned long offset;
+
+	/* TODO: add support for huge pages */
+	if (PAGE_LARGE(pte)) {
+		offset = vaddr - PAGE_LARGE_ALIGN_DOWN(vaddr);
+	} else {
+		offset = vaddr - PAGE_ALIGN_DOWN(vaddr);
+	}
+
+
+	return PTE_REMOVE_FLAGS(pte) + offset;
+#else
 	return (__phys_addr)address;
+#endif
 }

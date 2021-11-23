@@ -32,6 +32,7 @@
 
 #define _GNU_SOURCE
 
+#include <flexos/isolation.h>
 #include <sys/statvfs.h>
 #include <sys/stat.h>
 #include <limits.h>
@@ -56,6 +57,18 @@
 int	vfs_debug = VFSDB_FLAGS;
 #endif
 
+static inline
+void _VFSCORE_SET_ERRNO(int errcode)
+{
+	errno = errcode;
+}
+
+static inline
+void VFSCORE_SET_ERRNO(int errcode)
+{
+	flexos_gate(libc, _VFSCORE_SET_ERRNO, errcode);
+}
+
 /* This macro is for defining an alias of the 64bit version of a
  * syscall to the regular one. It seams we can make the logic which is
  * choosing the right call simpler then in common libc.
@@ -69,7 +82,7 @@ static mode_t global_umask = S_IWGRP | S_IWOTH;
 
 static inline int libc_error(int err)
 {
-    errno = err;
+    VFSCORE_SET_ERRNO(err);
     return -1;
 }
 
@@ -146,7 +159,7 @@ int open(const char *pathname, int flags, ...)
 	out_fput:
 	fdrop(fp);
 	out_errno:
-	errno = error;
+	VFSCORE_SET_ERRNO(error);
 	trace_vfs_open_err(error);
 	return -1;
 }
@@ -170,7 +183,7 @@ int openat(int dirfd, const char *pathname, int flags, ...)
 	struct vfscore_file *fp;
 	int error = fget(dirfd, &fp);
 	if (error) {
-		errno = error;
+		VFSCORE_SET_ERRNO(error);
 		return -1;
 	}
 
@@ -673,7 +686,7 @@ int ioctl(int fd, unsigned long int request, ...)
 
 	out_errno:
 	trace_vfs_ioctl_err(error);
-	errno = error;
+	VFSCORE_SET_ERRNO(error);
 	return -1;
 }
 
@@ -735,7 +748,7 @@ int __fxstat(int ver __unused, int fd, struct stat *st)
 
 	out_errno:
 	trace_vfs_fstat_err(error);
-	errno = error;
+	VFSCORE_SET_ERRNO(error);
 	return -1;
 }
 
@@ -763,7 +776,7 @@ int __fxstatat(int ver __unused, int dirfd, const char *pathname, struct stat *s
 	struct vfscore_file *fp;
 	int error = fget(dirfd, &fp);
 	if (error) {
-		errno = error;
+		VFSCORE_SET_ERRNO(error);
 		return -1;
 	}
 
@@ -841,7 +854,7 @@ DIR *opendir(const char *path)
 
 	dir = malloc(sizeof(*dir));
 	if (!dir) {
-		errno = ENOMEM;
+        	VFSCORE_SET_ERRNO(ENOMEM);
 		goto out_err;
 	}
 
@@ -853,7 +866,7 @@ DIR *opendir(const char *path)
 		goto out_free_dir;
 
 	if (!S_ISDIR(st.st_mode)) {
-		errno = ENOTDIR;
+        	VFSCORE_SET_ERRNO(ENOTDIR);
 		goto out_free_dir;
 	}
 
@@ -873,12 +886,12 @@ DIR *fdopendir(int fd)
 		return NULL;
 	}
 	if (!S_ISDIR(st.st_mode)) {
-		errno = ENOTDIR;
+        	VFSCORE_SET_ERRNO(ENOTDIR);
 		return NULL;
 	}
 	dir = malloc(sizeof(*dir));
 	if (!dir) {
-		errno = ENOMEM;
+        	VFSCORE_SET_ERRNO(ENOMEM);
 		return NULL;
 	}
 	dir->fd = fd;
@@ -941,7 +954,7 @@ int scandir(const char *path, struct dirent ***res,
 		free(names);
 		return -1;
 	}
-	errno = old_errno;
+        VFSCORE_SET_ERRNO(old_errno);
 
 	if (cmp)
 		qsort(names, cnt, sizeof *names, (int (*)(const void *, const void *))cmp);
@@ -958,7 +971,7 @@ struct dirent *readdir(DIR *dir)
 	if (ret)
 		return ERR2PTR(-ret);
 
-	errno = 0;
+        VFSCORE_SET_ERRNO(0);
 	return result;
 }
 
@@ -1068,7 +1081,7 @@ mkdir(const char *pathname, mode_t mode)
 	return 0;
 	out_errno:
 	trace_vfs_mkdir_err(error);
-	errno = error;
+	VFSCORE_SET_ERRNO(error);
 	return -1;
 }
 
@@ -1307,14 +1320,14 @@ int symlink(const char *oldpath, const char *newpath)
 
 	error = ENOENT;
 	if (oldpath == NULL || newpath == NULL) {
-		errno = ENOENT;
+        	VFSCORE_SET_ERRNO(ENOENT);
 		trace_vfs_symlink_err(error);
 		return (-1);
 	}
 
 	error = sys_symlink(oldpath, newpath);
 	if (error) {
-		errno = error;
+		VFSCORE_SET_ERRNO(error);
 		trace_vfs_symlink_err(error);
 		return (-1);
 	}
@@ -1347,7 +1360,7 @@ int unlink(const char *pathname)
 	return 0;
 	out_errno:
 	trace_vfs_unlink_err(error);
-	errno = error;
+	VFSCORE_SET_ERRNO(error);
 	return -1;
 }
 
@@ -1375,7 +1388,7 @@ int __xstat(int ver __unused, const char *pathname, struct stat *st)
 
 	out_errno:
 	trace_vfs_stat_err(error);
-	errno = error;
+	VFSCORE_SET_ERRNO(error);
 	return -1;
 }
 
@@ -1384,7 +1397,7 @@ LFS64(__xstat);
 int stat(const char *pathname, struct stat *st)
 {
 	if (!pathname) {
-		errno = EINVAL;
+        	VFSCORE_SET_ERRNO(EINVAL);
 		return -1;
 	}
 	return __xstat(1, pathname, st);
@@ -1454,7 +1467,7 @@ int __statfs(const char *pathname, struct statfs *buf)
 	return 0;
 	out_errno:
 	trace_vfs_statfs_err(error);
-	errno = error;
+	VFSCORE_SET_ERRNO(error);
 	return -1;
 }
 __weak_alias(__statfs, statfs);
@@ -1485,7 +1498,7 @@ int __fstatfs(int fd, struct statfs *buf)
 
 	out_errno:
 	trace_vfs_fstatfs_err(error);
-	errno = error;
+	VFSCORE_SET_ERRNO(error);
 	return -1;
 }
 __weak_alias(__fstatfs, fstatfs);
@@ -1603,7 +1616,7 @@ int dup(int oldfd)
 	fdrop(fp);
 	out_errno:
 	trace_vfs_dup_err(error);
-	errno = error;
+	VFSCORE_SET_ERRNO(error);
 	return -1;
 }
 
@@ -1690,7 +1703,7 @@ int fcntl(int fd, int cmd, ...)
 	struct vfscore_file *fp;
 	int ret = 0, error;
 #if defined(FIONBIO) && defined(FIOASYNC)
-	int tmp;
+	int tmp __attribute__((flexos_whitelist));
 #endif
 
 	va_start(ap, cmd);
@@ -1751,19 +1764,19 @@ int fcntl(int fd, int cmd, ...)
 		fp->f_flags |= O_CLOEXEC;
 		break;
 	case F_SETLK:
-		uk_pr_warn("fcntl(F_SETLK) stubbed\n");
+		flexos_gate(ukdebug, uk_pr_warn, FLEXOS_SHARED_LITERAL("fcntl(F_SETLK) stubbed\n"));
 		break;
 	case F_GETLK:
-		uk_pr_warn("fcntl(F_GETLK) stubbed\n");
+		flexos_gate(ukdebug, uk_pr_warn, FLEXOS_SHARED_LITERAL("fcntl(F_GETLK) stubbed\n"));
 		break;
 	case F_SETLKW:
-		uk_pr_warn("fcntl(F_SETLKW) stubbed\n");
+		flexos_gate(ukdebug, uk_pr_warn, FLEXOS_SHARED_LITERAL("fcntl(F_SETLKW) stubbed\n"));
 		break;
 	case F_SETOWN:
-		uk_pr_warn("fcntl(F_SETOWN) stubbed\n");
+		flexos_gate(ukdebug, uk_pr_warn, FLEXOS_SHARED_LITERAL("fcntl(F_SETOWN) stubbed\n"));
 		break;
 	default:
-		uk_pr_err("unsupported fcntl cmd 0x%x\n", cmd);
+		flexos_gate(ukdebug, uk_pr_err, FLEXOS_SHARED_LITERAL("unsupported fcntl cmd 0x%x\n"), cmd);
 		error = EINVAL;
 	}
 
@@ -1775,7 +1788,7 @@ int fcntl(int fd, int cmd, ...)
 
 out_errno:
 	trace_vfs_fcntl_err(error);
-	errno = error;
+	VFSCORE_SET_ERRNO(error);
 	return -1;
 }
 
@@ -1971,7 +1984,7 @@ UK_SYSCALL_DEFINE(ssize_t, readlink, const char *, pathname, char *, buf, size_t
 
 	return size;
 	out_errno:
-	errno = error;
+	VFSCORE_SET_ERRNO(error);
 	return -1;
 }
 
@@ -2068,7 +2081,7 @@ UK_SYSCALL_DEFINE(int, futimesat, int, dirfd, const char*, pathname, const struc
 	return 0;
 
 out_errno:
-	errno = error;
+	VFSCORE_SET_ERRNO(error);
 	return -1;
 }
 
@@ -2086,7 +2099,7 @@ UK_SYSCALL_DEFINE(int, utimensat, int, dirfd, const char*, pathname, const struc
 
 	if (error) {
 		trace_vfs_utimensat_err(error);
-		errno = error;
+		VFSCORE_SET_ERRNO(error);
 		return -1;
 	}
 
@@ -2105,7 +2118,7 @@ int futimens(int fd, const struct timespec times[2])
 	int error = sys_futimens(fd, times);
 	if (error) {
 		trace_vfs_futimens_err(error);
-		errno = error;
+        	VFSCORE_SET_ERRNO(error);
 		return -1;
 	}
 
@@ -2347,7 +2360,7 @@ fs_noop(void)
 int chroot(const char *path __unused)
 {
 	WARN_STUBBED();
-	errno = ENOSYS;
+        VFSCORE_SET_ERRNO(ENOSYS);
 	return -1;
 }
 

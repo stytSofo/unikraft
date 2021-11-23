@@ -43,6 +43,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <flexos/isolation.h>
 
 #include <vfscore/prex.h>
 #include <vfscore/dentry.h>
@@ -87,9 +88,17 @@ static struct uk_list_head vnode_table[VNODE_BUCKETS];
  * If a vnode is already locked, there is no need to
  * lock this global lock to access internal data.
  */
-static struct uk_mutex vnode_lock = UK_MUTEX_INITIALIZER(vnode_lock);
-#define VNODE_LOCK()	uk_mutex_lock(&vnode_lock)
-#define VNODE_UNLOCK()	uk_mutex_unlock(&vnode_lock)
+static struct uk_mutex vnode_lock __section(".data_shared") = UK_MUTEX_INITIALIZER(vnode_lock);
+
+static inline void VNODE_LOCK()
+{
+	flexos_gate(uklock, uk_mutex_lock, &vnode_lock);
+}
+
+static inline void VNODE_UNLOCK()
+{
+	flexos_gate(uklock, uk_mutex_unlock, &vnode_lock);
+}
 
 /* TODO: implement mutex_owned */
 #define VNODE_OWNED()	(1)
@@ -120,7 +129,7 @@ vn_lookup(struct mount *mp, uint64_t ino)
 	uk_list_for_each_entry(vp, &vnode_table[vn_hash(mp, ino)], v_link) {
 		if (vp->v_mount == mp && vp->v_ino == ino) {
 			vp->v_refcnt++;
-			uk_mutex_lock(&vp->v_lock);
+			flexos_gate(uklock, uk_mutex_lock, &vp->v_lock);
 			return vp;
 		}
 	}
@@ -150,7 +159,7 @@ vn_lock(struct vnode *vp)
 	UK_ASSERT(vp);
 	UK_ASSERT(vp->v_refcnt > 0);
 
-	uk_mutex_lock(&vp->v_lock);
+	flexos_gate(uklock, uk_mutex_lock, &vp->v_lock);
 	DPRINTF(VFSDB_VNODE, ("vn_lock:   %s\n", vn_path(vp)));
 }
 
@@ -163,7 +172,7 @@ vn_unlock(struct vnode *vp)
 	UK_ASSERT(vp);
 	UK_ASSERT(vp->v_refcnt >= 0);
 
-	uk_mutex_unlock(&vp->v_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &vp->v_lock);
 	DPRINTF(VFSDB_VNODE, ("vn_lock:   %s\n", vn_path(vp)));
 }
 
@@ -191,9 +200,10 @@ vfscore_vget(struct mount *mp, uint64_t ino, struct vnode **vpp)
 		return 1;
 	}
 
-	vp = calloc(1, sizeof(*vp));
+	vp = flexos_calloc_whitelist(1, sizeof(*vp));
 	if (!vp) {
 		VNODE_UNLOCK();
+		flexos_free_whitelist(vp);
 		return 0;
 	}
 
@@ -202,17 +212,17 @@ vfscore_vget(struct mount *mp, uint64_t ino, struct vnode **vpp)
 	vp->v_mount = mp;
 	vp->v_refcnt = 1;
 	vp->v_op = mp->m_op->vfs_vnops;
-	uk_mutex_init(&vp->v_lock);
+	flexos_gate(uklock, uk_mutex_init,&vp->v_lock);
 	/*
 	 * Request to allocate fs specific data for vnode.
 	 */
 	if ((error = VFS_VGET(mp, vp)) != 0) {
 		VNODE_UNLOCK();
-		free(vp);
+		flexos_free_whitelist(vp);
 		return 0;
 	}
 	vfs_busy(vp->v_mount);
-	uk_mutex_lock(&vp->v_lock);
+	flexos_gate(uklock, uk_mutex_lock, &vp->v_lock);
 
 	uk_list_add(&vp->v_link, &vnode_table[vn_hash(mp, ino)]);
 	VNODE_UNLOCK();
@@ -248,8 +258,8 @@ vput(struct vnode *vp)
 	if (vp->v_op->vop_inactive)
 		VOP_INACTIVE(vp);
 	vfs_unbusy(vp->v_mount);
-	uk_mutex_unlock(&vp->v_lock);
-	free(vp);
+	flexos_gate(uklock, uk_mutex_unlock, &vp->v_lock);
+	flexos_free_whitelist(vp);
 }
 
 /*
@@ -294,7 +304,7 @@ vrele(struct vnode *vp)
 	 */
 	VOP_INACTIVE(vp);
 	vfs_unbusy(vp->v_mount);
-	free(vp);
+	flexos_free_whitelist(vp);
 }
 
 /*
@@ -454,16 +464,16 @@ vnode_dump(void)
 
 	VNODE_LOCK();
 
-	uk_pr_debug("Dump vnode\n");
-	uk_pr_debug(" vnode            mount            type  refcnt path\n");
-	uk_pr_debug(" ---------------- ---------------- ----- ------ ------------------------------\n");
+	flexos_gate(ukdebug, uk_pr_debug, FLEXOS_SHARED_LITERAL("Dump vnode\n"));
+	flexos_gate(ukdebug, uk_pr_debug, FLEXOS_SHARED_LITERAL(" vnode            mount            type  refcnt path\n"));
+	flexos_gate(ukdebug, uk_pr_debug, FLEXOS_SHARED_LITERAL(" ---------------- ---------------- ----- ------ ------------------------------\n"));
 
 	for (i = 0; i < VNODE_BUCKETS; i++) {
 		uk_list_for_each_entry(vp, &vnode_table[i], v_link) {
 			mp = vp->v_mount;
 
 
-			uk_pr_debug(" %016lx %016lx %s %6d %s%s\n",
+			flexos_gate(ukdebug, uk_pr_debug, FLEXOS_SHARED_LITERAL(" %016lx %016lx %s %6d %s%s\n"),
 				    (unsigned long) vp,
 				    (unsigned long) mp, type[vp->v_type],
 				    vp->v_refcnt,
@@ -471,7 +481,7 @@ vnode_dump(void)
 				    vn_path(vp));
 		}
 	}
-	uk_pr_debug("\n");
+	flexos_gate(ukdebug, uk_pr_debug, FLEXOS_SHARED_LITERAL("\n"));
 	VNODE_UNLOCK();
 }
 #endif

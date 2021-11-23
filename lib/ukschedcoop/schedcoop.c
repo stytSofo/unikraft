@@ -29,6 +29,7 @@
  * The scheduler is non-preemptive (cooperative), and schedules according
  * to Round Robin algorithm.
  */
+#include <flexos/isolation.h>
 #include <uk/plat/lcpu.h>
 #include <uk/plat/memory.h>
 #include <uk/plat/time.h>
@@ -47,7 +48,7 @@ static void print_runqueue(struct uk_sched *s)
 	struct uk_thread *th;
 
 	UK_TAILQ_FOREACH(th, &prv->thread_list, thread_list) {
-		uk_pr_debug("   Thread \"%s\", runnable=%d\n",
+		flexos_gate(libc, uk_pr_debug, "   Thread \"%s\", runnable=%d\n",
 			    th->name, is_runnable(th));
 	}
 }
@@ -76,7 +77,8 @@ static void schedcoop_schedule(struct uk_sched *s)
 		 * find the time when the next timeout expires, else use
 		 * 10 seconds.
 		 */
-		__snsec now = ukplat_monotonic_clock();
+		__snsec now;
+		flexos_gate_r(libukplat, now, ukplat_monotonic_clock);
 		__snsec min_wakeup_time = now + ukarch_time_sec_to_nsec(10);
 
 		/* wake some sleeping threads */
@@ -114,7 +116,8 @@ static void schedcoop_schedule(struct uk_sched *s)
 		/* block until the next timeout expires, or for 10 secs,
 		 * whichever comes first
 		 */
-		ukplat_lcpu_halt_to(min_wakeup_time);
+
+		flexos_gate(libukplat, ukplat_lcpu_halt_to, min_wakeup_time);
 		/* handle pending events if any */
 		ukplat_lcpu_irqs_handle_pending();
 
@@ -175,7 +178,7 @@ static void schedcoop_thread_remove(struct uk_sched *s, struct uk_thread *t)
 	/* Schedule only if current thread is exiting */
 	if (t == uk_thread_current()) {
 		schedcoop_schedule(s);
-		uk_pr_warn("schedule() returned! Trying again\n");
+		flexos_gate(libc, uk_pr_warn, "schedule() returned! Trying again\n");
 	}
 }
 
@@ -205,7 +208,9 @@ static void schedcoop_thread_woken(struct uk_sched *s, struct uk_thread *t)
 	}
 }
 
-static void idle_thread_fn(void *unused __unused)
+/* FIXME FLEXOS this is not really a libc callback */
+__attribute__((libc_callback))
+static void _idle_thread_fn(void *unused)
 {
 	struct uk_thread *current = uk_thread_current();
 	struct uk_sched *s = current->sched;
@@ -219,6 +224,14 @@ static void idle_thread_fn(void *unused __unused)
 	}
 }
 
+static void idle_thread_fn(void *unused) {
+#if CONFIG_LIBFLEXOS_INTELPKU
+	/* FIXME FLEXOS: can we do this differently? */
+	wrpkru(0x3ffffffc);
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+	_idle_thread_fn(unused);
+}
+
 static void schedcoop_yield(struct uk_sched *s)
 {
 	schedcoop_schedule(s);
@@ -226,6 +239,8 @@ static void schedcoop_yield(struct uk_sched *s)
 
 struct uk_sched *uk_schedcoop_init(struct uk_alloc *a)
 {
+	/* IMPORTANT NOTE in the case of PKU: this is running in protection domain
+	   0x0 since we didn't start the main thread yet! */
 	struct schedcoop_private *prv = NULL;
 	struct uk_sched *sched = NULL;
 

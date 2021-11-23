@@ -335,3 +335,12 @@ int ukplat_irq_init(struct uk_alloc *a __unused)
 	/* Nothing for now */
 	return 0;
 }
+
+/* For some reason, the inline version in the header file doesn't work */
+int notify_remote_via_evtchn2(evtchn_port_t port)
+{
+	evtchn_send_t op;
+
+	op.port = port;
+	return HYPERVISOR_event_channel_op(EVTCHNOP_send, &op);
+}

@@ -33,7 +33,11 @@
 #ifndef __UK_MUTEX_H__
 #define __UK_MUTEX_H__
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdiscarded-qualifiers"
+
 #include <uk/config.h>
+#include <flexos/isolation.h>
 
 #if CONFIG_LIBUKLOCK_MUTEX
 #include <uk/assert.h>
@@ -67,13 +71,44 @@ static inline void uk_mutex_lock(struct uk_mutex *m)
 	struct uk_thread *current;
 	unsigned long irqf;
 
+	/* Volatile to make sure that the compiler doesn't reorganize
+	 * the code in such a way that the dereference happens in the
+	 * other domain... */
+	volatile struct uk_waitq *wq = &m->wait;
+	volatile int lock_count = m->lock_count;
+	volatile struct uk_thread *owner = m->owner;
+
 	UK_ASSERT(m);
 
-	current = uk_thread_current();
+	flexos_gate_r(libuksched, current, uk_thread_current)
 
 	for (;;) {
-		uk_waitq_wait_event(&m->wait,
-			m->lock_count == 0 || m->owner == current);
+		do {
+			struct uk_thread *__current;
+			unsigned long flags;
+			DEFINE_WAIT(__wait);
+			if (lock_count == 0 || owner == current)
+				break;
+			for (;;) {
+				__current = uk_thread_current();
+				/* protect the list */
+				flags = ukplat_lcpu_save_irqf();
+				uk_waitq_add(wq, __wait);
+				flexos_gate(libuksched, uk_thread_set_wakeup_time, __current, 0);
+				flexos_gate(libuksched, clear_runnable, __current);
+				flexos_gate(libuksched, uk_sched_thread_blocked, __current);
+				ukplat_lcpu_restore_irqf(flags);
+				if (lock_count == 0 || owner == current)
+					break;
+				flexos_gate(libuksched, uk_sched_yield);
+			}
+			flags = ukplat_lcpu_save_irqf();
+			/* need to wake up */
+			flexos_gate(libuksched, uk_thread_wake, __current);
+			uk_waitq_remove(wq, __wait);
+			ukplat_lcpu_restore_irqf(flags);
+		} while (0);
+
 		irqf = ukplat_lcpu_save_irqf();
 		if (m->lock_count == 0 || m->owner == current)
 			break;
@@ -92,7 +127,7 @@ static inline int uk_mutex_trylock(struct uk_mutex *m)
 
 	UK_ASSERT(m);
 
-	current = uk_thread_current();
+	flexos_gate_r(libuksched, current, uk_thread_current)
 
 	irqf = ukplat_lcpu_save_irqf();
 	if (m->lock_count == 0 || m->owner == current) {
@@ -112,6 +147,8 @@ static inline int uk_mutex_is_locked(struct uk_mutex *m)
 static inline void uk_mutex_unlock(struct uk_mutex *m)
 {
 	unsigned long irqf;
+	/* regarding volatile, see previous comment */
+	volatile struct uk_waitq *wq = &m->wait;
 
 	UK_ASSERT(m);
 
@@ -119,7 +156,7 @@ static inline void uk_mutex_unlock(struct uk_mutex *m)
 	UK_ASSERT(m->lock_count > 0);
 	if (--m->lock_count == 0) {
 		m->owner = NULL;
-		uk_waitq_wake_up(&m->wait);
+		flexos_gate(libuksched, uk_waitq_wake_up, wq);
 	}
 	ukplat_lcpu_restore_irqf(irqf);
 }
@@ -129,5 +166,7 @@ static inline void uk_mutex_unlock(struct uk_mutex *m)
 #endif
 
 #endif /* CONFIG_LIBUKLOCK_MUTEX */
+
+#pragma GCC diagnostic pop
 
 #endif /* __UK_MUTEX_H__ */

@@ -139,8 +139,10 @@ static inline int ukplat_memregion_find_next(int i, int sflags,
  *         A return value < 0 means that there is no initrd module,
  *         `mrd` may be filled out with undefined values.
  */
-#define ukplat_memregion_find_initrd0(mrd) \
-	ukplat_memregion_find_next(-1, UKPLAT_MEMRF_INITRD, (mrd))
+static inline int ukplat_memregion_find_initrd0(struct ukplat_memregion_desc *mrd)
+{
+	return ukplat_memregion_find_next(-1, UKPLAT_MEMRF_INITRD, (mrd));
+}
 
 /**
  * Sets the platform memory allocator and triggers the platform memory mappings

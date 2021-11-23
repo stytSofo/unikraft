@@ -27,7 +27,6 @@
 #define __UK_SCHED_WAIT_H__
 
 #include <uk/plat/lcpu.h>
-#include <uk/plat/time.h>
 #include <uk/sched.h>
 #include <uk/wait_types.h>
 
@@ -92,40 +91,9 @@ do { \
 	ukplat_lcpu_restore_irqf(flags); \
 } while (0)
 
-#define __wq_wait_event_deadline(wq, condition, deadline, deadline_condition) \
-do { \
-	struct uk_thread *__current; \
-	unsigned long flags; \
-	DEFINE_WAIT(__wait); \
-	if (condition) \
-		break; \
-	for (;;) { \
-		__current = uk_thread_current(); \
-		/* protect the list */ \
-		flags = ukplat_lcpu_save_irqf(); \
-		uk_waitq_add(wq, &__wait); \
-		__current->wakeup_time = deadline; \
-		clear_runnable(__current); \
-		uk_sched_thread_blocked(__current->sched, __current); \
-		ukplat_lcpu_restore_irqf(flags); \
-		if ((condition) || (deadline_condition)) \
-			break; \
-		uk_sched_yield(); \
-	} \
-	flags = ukplat_lcpu_save_irqf(); \
-	/* need to wake up */ \
-	uk_thread_wake(__current); \
-	uk_waitq_remove(wq, &__wait); \
-	ukplat_lcpu_restore_irqf(flags); \
-} while (0)
-
-#define uk_waitq_wait_event(wq, condition) \
-	__wq_wait_event_deadline(wq, (condition), 0, 0)
-
-#define uk_waitq_wait_event_deadline(wq, condition, deadline) \
-	__wq_wait_event_deadline(wq, (condition), \
-		(deadline), \
-		(deadline) && ukplat_monotonic_clock() >= (deadline))
+#if CONFIG_LIBFLEXOS_INTELPKU
+extern struct uk_waitq_entry wq_entries[32];
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
 
 static inline
 void uk_waitq_wake_up(struct uk_waitq *wq)

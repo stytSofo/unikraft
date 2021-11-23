@@ -30,6 +30,7 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <flexos/isolation.h>
 #include <uk/arch/limits.h>
 #include <uk/arch/lcpu.h>
 #include <uk/assert.h>
@@ -37,9 +38,9 @@
 #include <uk/ctors.h>
 
 #ifdef CONFIG_LIBUKSP_VALUE_USECONSTANT
-const unsigned long __stack_chk_guard = CONFIG_LIBUKSP_VALUE_CONSTANT;
+unsigned long __stack_chk_guard __attribute__((flexos_whitelist)) = CONFIG_LIBUKSP_VALUE_CONSTANT;
 #else
-const unsigned long __stack_chk_guard = 0xFF0A0D00; /* terminator canary */
+unsigned long __stack_chk_guard __attribute__((flexos_whitelist)) = 0xFF0A0D00; /* terminator canary */
 #endif
 
 __attribute__((noreturn))

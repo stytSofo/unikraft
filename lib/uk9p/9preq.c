@@ -31,6 +31,7 @@
  */
 
 #include <string.h>
+#include <flexos/isolation.h>
 #include <uk/config.h>
 #include <uk/9preq.h>
 #include <uk/9pdev.h>
@@ -64,7 +65,7 @@ void uk_9preq_init(struct uk_9preq *req)
 	UK_INIT_LIST_HEAD(&req->_list);
 	uk_refcount_init(&req->refcount, 1);
 #if CONFIG_LIBUKSCHED
-	uk_waitq_init(&req->wq);
+	flexos_gate(libuksched, uk_waitq_init, &req->wq);
 #endif
 }
 
@@ -175,7 +176,7 @@ int uk_9preq_receive_cb(struct uk_9preq *req, uint32_t recv_size)
 
 #if CONFIG_LIBUKSCHED
 	/* Notify any waiting threads. */
-	uk_waitq_wake_up(&req->wq);
+	flexos_gate(libuksched, uk_waitq_wake_up, &req->wq);
 #endif
 
 	return 0;
@@ -186,7 +187,31 @@ int uk_9preq_waitreply(struct uk_9preq *req)
 	int rc;
 
 #if CONFIG_LIBUKSCHED
-	uk_waitq_wait_event(&req->wq, req->state == UK_9PREQ_RECEIVED);
+	do {
+		struct uk_thread *__current;
+		unsigned long flags;
+		DEFINE_WAIT(__wait);
+		if (req->state == UK_9PREQ_RECEIVED)
+			break;
+		for (;;) {
+			__current = uk_thread_current();
+			/* protect the list */
+			flags = ukplat_lcpu_save_irqf();
+			uk_waitq_add(&req->wq, __wait);
+			flexos_gate(libuksched, uk_thread_set_wakeup_time, __current, 0);
+			flexos_gate(libuksched, clear_runnable, __current);
+			flexos_gate(libuksched, uk_sched_thread_blocked, __current);
+			ukplat_lcpu_restore_irqf(flags);
+			if (req->state == UK_9PREQ_RECEIVED)
+				break;
+			flexos_gate(libuksched, uk_sched_yield);
+		}
+		flags = ukplat_lcpu_save_irqf();
+		/* need to wake up */
+		flexos_gate(libuksched, uk_thread_wake, __current);
+		uk_waitq_remove(&req->wq, __wait);
+		ukplat_lcpu_restore_irqf(flags);
+	} while (0);
 #else
 	while (UK_READ_ONCE(req->state) != UK_9PREQ_RECEIVED)
 		;

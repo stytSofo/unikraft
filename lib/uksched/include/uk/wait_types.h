@@ -46,12 +46,25 @@ UK_STAILQ_HEAD(uk_waitq, struct uk_waitq_entry);
 #define DEFINE_WAIT_QUEUE(name) \
 	struct uk_waitq name = __WAIT_QUEUE_INITIALIZER(name)
 
+#if CONFIG_LIBFLEXOS_INTELPKU
+/* FIXME FLEXOS get rid of this hack... this should be easily feasible
+ * with whitelists. */
+extern struct uk_waitq_entry wq_entries[32];
+
+#define DEFINE_WAIT(name) 						\
+	struct uk_thread *__cur = uk_thread_current();			\
+	struct uk_waitq_entry *name = &wq_entries[uk_thread_get_tid()];	\
+	memset(name, 0, sizeof(*name));					\
+	name->thread       = uk_thread_current();
+#else
 #define DEFINE_WAIT(name) \
-struct uk_waitq_entry name = { \
-	.waiting      = 0, \
-	.thread       = uk_thread_current(), \
-	.thread_list  = { NULL } \
-}
+struct uk_waitq_entry _name = { \
+    .waiting      = 0, \
+    .thread       = uk_thread_current(), \
+    .thread_list  = { NULL } \
+}; \
+struct uk_waitq_entry *name = &_name;
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
 
 #ifdef __cplusplus
 }

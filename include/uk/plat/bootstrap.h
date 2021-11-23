@@ -50,7 +50,8 @@ extern "C" {
  * @param argc Number of arguments
  * @param args Array to '\0'-terminated arguments
  */
-void ukplat_entry(int argc, char *argv[]) __noreturn;
+void ukplat_entry(int argc, char *argv[]) __noreturn
+__attribute__((section(".text_comp_exclusive")));
 
 /**
  * Called by platform library during initialization

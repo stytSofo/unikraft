@@ -37,6 +37,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <vfscore/dentry.h>
+#include <flexos/isolation.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,8 +61,15 @@ struct vfscore_file {
 	struct uk_mutex f_lock;
 };
 
-#define FD_LOCK(fp)       uk_mutex_lock(&(fp->f_lock))
-#define FD_UNLOCK(fp)     uk_mutex_unlock(&(fp->f_lock))
+static inline void FD_LOCK(struct vfscore_file *fp)
+{
+	flexos_gate(uklock, uk_mutex_lock, &(fp->f_lock));
+}
+
+static inline void FD_UNLOCK(struct vfscore_file *fp)
+{
+	flexos_gate(uklock, uk_mutex_unlock, &(fp->f_lock));
+}
 
 int vfscore_alloc_fd(void);
 int vfscore_reserve_fd(int fd);

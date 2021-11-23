@@ -97,6 +97,7 @@ struct uk_alloc {
 #endif
 	/* optional interface */
 	uk_alloc_addmem_func_t addmem;
+	size_t len;
 
 	/* internal */
 	struct uk_alloc *next;
@@ -105,10 +106,44 @@ struct uk_alloc {
 
 extern struct uk_alloc *_uk_alloc_head;
 
+#if CONFIG_LIBFLEXOS_INTELPKU
+#include <flexos/impl/intelpku.h>
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+
+/* FIXME FLEXOS: It seems that GCC optimizations modify this code so that
+ * flexos_comp1_alloc is read even if it is not the current compartment's
+ * allocator. Obviously this leads to a PKU protection fault. For now
+ * we simply disable optimizations for this function, but this is a dirty
+ * workaround.
+ */
+
+#pragma GCC push_options
+#pragma GCC optimize("O0")
 static inline struct uk_alloc *uk_alloc_get_default(void)
 {
+#if CONFIG_LIBFLEXOS_INTELPKU
+	uint32_t pkru = rdpkru();
+
+	/* Use the allocator the corresponds to the current
+	 * compartment. */
+	/* FLEXOS TODO this code should be generated */
+	switch (pkru) {
+	case 0x3ffffffc:
+		return _uk_alloc_head;
+/* __FLEXOS MARKER__: insert compartment-specific allocator cases here. */
+	case 0x3fffffff:
+		/* reserved for shared data */
+                __attribute__((fallthrough));
+	default:
+		uk_pr_err("Allocating from a context where the current "
+			 "compartment cannot be clearly determined.");
+		return _uk_alloc_head;
+        }
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+
 	return _uk_alloc_head;
 }
+#pragma GCC pop_options
 
 /* wrapper functions */
 static inline void *uk_do_malloc(struct uk_alloc *a, size_t size)

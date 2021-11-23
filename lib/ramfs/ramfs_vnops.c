@@ -54,8 +54,9 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <vfscore/fs.h>
+#include <flexos/isolation.h>
 
-static struct uk_mutex ramfs_lock = UK_MUTEX_INITIALIZER(ramfs_lock);
+static struct uk_mutex ramfs_lock __attribute__((flexos_whitelist)) = UK_MUTEX_INITIALIZER(ramfs_lock);
 static uint64_t inode_count = 1; /* inode 0 is reserved to root */
 
 static void
@@ -125,7 +126,7 @@ ramfs_add_node(struct ramfs_node *dnp, char *name, int type)
 	if (np == NULL)
 		return NULL;
 
-	uk_mutex_lock(&ramfs_lock);
+	flexos_gate(uklock, uk_mutex_lock, &ramfs_lock);
 
 	/* Link to the directory list */
 	if (dnp->rn_child == NULL) {
@@ -139,7 +140,7 @@ ramfs_add_node(struct ramfs_node *dnp, char *name, int type)
 
 	set_times_to_now(&(dnp->rn_mtime), &(dnp->rn_ctime), NULL);
 
-	uk_mutex_unlock(&ramfs_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &ramfs_lock);
 	return np;
 }
 
@@ -151,7 +152,7 @@ ramfs_remove_node(struct ramfs_node *dnp, struct ramfs_node *np)
 	if (dnp->rn_child == NULL)
 		return EBUSY;
 
-	uk_mutex_lock(&ramfs_lock);
+	flexos_gate(uklock, uk_mutex_lock, &ramfs_lock);
 
 	/* Unlink from the directory list */
 	if (dnp->rn_child == np) {
@@ -160,7 +161,7 @@ ramfs_remove_node(struct ramfs_node *dnp, struct ramfs_node *np)
 		for (prev = dnp->rn_child; prev->rn_next != np;
 			 prev = prev->rn_next) {
 			if (prev->rn_next == NULL) {
-				uk_mutex_unlock(&ramfs_lock);
+				flexos_gate(uklock, uk_mutex_unlock, &ramfs_lock);
 				return ENOENT;
 			}
 		}
@@ -170,7 +171,7 @@ ramfs_remove_node(struct ramfs_node *dnp, struct ramfs_node *np)
 
 	set_times_to_now(&(dnp->rn_mtime), &(dnp->rn_ctime), NULL);
 
-	uk_mutex_unlock(&ramfs_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &ramfs_lock);
 	return 0;
 }
 
@@ -214,7 +215,7 @@ ramfs_lookup(struct vnode *dvp, char *name, struct vnode **vpp)
 	if (*name == '\0')
 		return ENOENT;
 
-	uk_mutex_lock(&ramfs_lock);
+	flexos_gate(uklock, uk_mutex_lock, &ramfs_lock);
 
 	len = strlen(name);
 	dnp = dvp->v_data;
@@ -227,17 +228,17 @@ ramfs_lookup(struct vnode *dvp, char *name, struct vnode **vpp)
 		}
 	}
 	if (found == 0) {
-		uk_mutex_unlock(&ramfs_lock);
+		flexos_gate(uklock, uk_mutex_unlock, &ramfs_lock);
 		return ENOENT;
 	}
 	if (vfscore_vget(dvp->v_mount, inode_count++, &vp)) {
 		/* found in cache */
 		*vpp = vp;
-		uk_mutex_unlock(&ramfs_lock);
+		flexos_gate(uklock, uk_mutex_unlock, &ramfs_lock);
 		return 0;
 	}
 	if (!vp) {
-		uk_mutex_unlock(&ramfs_lock);
+		flexos_gate(uklock, uk_mutex_unlock, &ramfs_lock);
 		return ENOMEM;
 	}
 	vp->v_data = np;
@@ -245,7 +246,7 @@ ramfs_lookup(struct vnode *dvp, char *name, struct vnode **vpp)
 	vp->v_type = np->rn_type;
 	vp->v_size = np->rn_size;
 
-	uk_mutex_unlock(&ramfs_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &ramfs_lock);
 
 	*vpp = vp;
 
@@ -257,7 +258,7 @@ ramfs_mkdir(struct vnode *dvp, char *name, mode_t mode)
 {
 	struct ramfs_node *np;
 
-	uk_pr_debug("mkdir %s\n", name);
+	//flexos_gate(ukdebug, uk_pr_debug, FLEXOS_SHARED_LITERAL("mkdir %s\n"), name);
 	if (strlen(name) > NAME_MAX)
 		return ENAMETOOLONG;
 
@@ -328,8 +329,8 @@ ramfs_rmdir(struct vnode *dvp, struct vnode *vp, char *name __unused)
 static int
 ramfs_remove(struct vnode *dvp, struct vnode *vp, char *name __maybe_unused)
 {
-	uk_pr_debug("remove %s in %s\n", name,
-		 RAMFS_NODE(dvp)->rn_name);
+	//flexos_gate(ukdebug, uk_pr_debug, "remove %s in %s\n", name,
+	//	 RAMFS_NODE(dvp)->rn_name);
 	return ramfs_remove_node(dvp->v_data, vp->v_data);
 }
 
@@ -341,8 +342,8 @@ ramfs_truncate(struct vnode *vp, off_t length)
 	void *new_buf;
 	size_t new_size;
 
-	uk_pr_debug("truncate %s length=%lld\n", RAMFS_NODE(vp)->rn_name,
-		 (long long) length);
+	//flexos_gate(ukdebug, uk_pr_debug, "truncate %s length=%lld\n", RAMFS_NODE(vp)->rn_name,
+	//	 (long long) length);
 	np = vp->v_data;
 
 	if (length == 0) {
@@ -384,7 +385,7 @@ ramfs_create(struct vnode *dvp, char *name, mode_t mode)
 	if (strlen(name) > NAME_MAX)
 		return ENAMETOOLONG;
 
-	uk_pr_debug("create %s in %s\n", name, RAMFS_NODE(dvp)->rn_name);
+	//flexos_gate(ukdebug, uk_pr_debug, "create %s in %s\n", name, RAMFS_NODE(dvp)->rn_name);
 	if (!S_ISREG(mode))
 		return EINVAL;
 
@@ -540,7 +541,7 @@ ramfs_readdir(struct vnode *vp, struct vfscore_file *fp, struct dirent *dir)
 	struct ramfs_node *np, *dnp;
 	int i;
 
-	uk_mutex_lock(&ramfs_lock);
+	flexos_gate(uklock, uk_mutex_lock, &ramfs_lock);
 
 	set_times_to_now(&(((struct ramfs_node *) vp->v_data)->rn_atime),
 			 NULL, NULL);
@@ -555,14 +556,14 @@ ramfs_readdir(struct vnode *vp, struct vfscore_file *fp, struct dirent *dir)
 		dnp = vp->v_data;
 		np = dnp->rn_child;
 		if (np == NULL) {
-			uk_mutex_unlock(&ramfs_lock);
+			flexos_gate(uklock, uk_mutex_unlock, &ramfs_lock);
 			return ENOENT;
 		}
 
 		for (i = 0; i != (fp->f_offset - 2); i++) {
 			np = np->rn_next;
 			if (np == NULL) {
-				uk_mutex_unlock(&ramfs_lock);
+				flexos_gate(uklock, uk_mutex_unlock, &ramfs_lock);
 				return ENOENT;
 			}
 		}
@@ -580,7 +581,7 @@ ramfs_readdir(struct vnode *vp, struct vfscore_file *fp, struct dirent *dir)
 
 	fp->f_offset++;
 
-	uk_mutex_unlock(&ramfs_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &ramfs_lock);
 	return 0;
 }
 

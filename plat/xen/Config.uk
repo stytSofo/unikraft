@@ -9,6 +9,7 @@ menuconfig PLAT_XEN
        select LIBUKTIME if !HAVE_LIBC && ARCH_X86_64
        select LIBFDT if ARCH_ARM_32
        select XEN_DBGEMERGENCY if ARCH_ARM_32
+       select DYNAMIC_PT
        help
                 Create a Unikraft image that runs as a Xen guest
 

@@ -45,6 +45,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/ioctl.h>
+#include <flexos/isolation.h>
 
 #include <dirent.h>
 #include <vfscore/prex.h>
@@ -197,7 +198,7 @@ sys_open(char *path, int flags, mode_t mode, struct vfscore_file **fpp)
 			goto out_vn_unlock;
 	}
 
-	fp = calloc(sizeof(struct vfscore_file), 1);
+	fp = flexos_calloc_whitelist(sizeof(struct vfscore_file), 1);
 	if (!fp) {
 	    error = ENOMEM;
 	    goto out_vn_unlock;
@@ -213,7 +214,7 @@ sys_open(char *path, int flags, mode_t mode, struct vfscore_file **fpp)
 	fp->f_dentry = dp;
 	dp = NULL;
 
-	uk_mutex_init(&fp->f_lock);
+	flexos_gate(uklock, uk_mutex_init, &fp->f_lock);
 
 	error = VOP_OPEN(vp, fp);
 	if (error) {
@@ -271,7 +272,7 @@ sys_read(struct vfscore_file *fp, const struct iovec *iov, size_t niov,
 		return 0;
 	}
 
-	struct uio uio;
+	struct uio uio __attribute__((flexos_whitelist));
 	/* TODO: is it necessary to copy iov within Unikraft?
 	 * OSv did this, mentioning this reason:
 	 *
@@ -279,7 +280,7 @@ sys_read(struct vfscore_file *fp, const struct iovec *iov, size_t niov,
 	 *  zeros the iov_len fields when it reads from disk, so we
 	 *  have to copy iov. "
 	 */
-	copy_iov = calloc(sizeof(struct iovec), niov);
+	copy_iov = flexos_calloc_whitelist(sizeof(struct iovec), niov);
 	if (!copy_iov)
 		return ENOMEM;
 	memcpy(copy_iov, iov, sizeof(struct iovec)*niov);
@@ -292,7 +293,7 @@ sys_read(struct vfscore_file *fp, const struct iovec *iov, size_t niov,
 	error = vfs_read(fp, &uio, (offset == -1) ? 0 : FOF_OFFSET);
 	*count = bytes - uio.uio_resid;
 
-	free(copy_iov);
+	flexos_free_whitelist(copy_iov);
 	return error;
 }
 
@@ -320,7 +321,7 @@ sys_write(struct vfscore_file *fp, const struct iovec *iov, size_t niov,
 		return 0;
 	}
 
-	struct uio uio;
+	struct uio uio __attribute__((flexos_whitelist));
 
 	/* TODO: same note as in sys_read. Original comment:
 	 *
@@ -328,7 +329,7 @@ sys_write(struct vfscore_file *fp, const struct iovec *iov, size_t niov,
 	 *  iov_len fields when it writes to disk, so we have to copy iov.
 	 */
 	/* std::vector<iovec> copy_iov(iov, iov + niov); */
-	copy_iov = calloc(sizeof(struct iovec), niov);
+	copy_iov = flexos_calloc_whitelist(sizeof(struct iovec), niov);
 	if (!copy_iov)
 		return ENOMEM;
 	memcpy(copy_iov, iov, sizeof(struct iovec)*niov);
@@ -341,7 +342,7 @@ sys_write(struct vfscore_file *fp, const struct iovec *iov, size_t niov,
 	error = vfs_write(fp, &uio, (offset == -1) ? 0 : FOF_OFFSET);
 	*count = bytes - uio.uio_resid;
 
-	free(copy_iov);
+	flexos_free_whitelist(copy_iov);
 	return error;
 }
 

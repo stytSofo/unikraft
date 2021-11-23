@@ -36,6 +36,7 @@
 #include <uk/alloc.h>
 #include <uk/assert.h>
 #include <uk/essentials.h>
+#include <flexos/isolation.h>
 #include <uk/errptr.h>
 #include <uk/list.h>
 #if CONFIG_LIBUKSCHED
@@ -168,7 +169,7 @@ static void p9front_handler(evtchn_port_t evtchn,
 		uk_9pdev_xmit_notify(ring->dev->p9dev);
 #if CONFIG_LIBUKSCHED
 	UK_WRITE_ONCE(ring->data_avail, true);
-	uk_waitq_wake_up(&ring->bh_wq);
+	flexos_gate(libuksched, uk_waitq_wake_up, &ring->bh_wq);
 #else
 	p9front_recv(ring);
 #endif
@@ -183,7 +184,7 @@ static void p9front_free_dev_ring(struct p9front_dev *p9fdev, int idx)
 
 	if (ring->bh_thread_name)
 		free(ring->bh_thread_name);
-	uk_thread_kill(ring->bh_thread);
+	flexos_gate(libuksched, uk_thread_kill, ring->bh_thread);
 	unbind_evtchn(ring->evtchn);
 	for (i = 0; i < (1 << p9fdev->ring_order); i++)
 		gnttab_end_access(ring->intf->ref[i]);
@@ -259,7 +260,7 @@ static int p9front_allocate_dev_ring(struct p9front_dev *p9fdev, int idx)
 #if CONFIG_LIBUKSCHED
 	/* Allocate bottom-half thread. */
 	ring->data_avail = false;
-	uk_waitq_init(&ring->bh_wq);
+	flexos_gate(libuksched, uk_waitq_init, &ring->bh_wq);
 
 	rc = asprintf(&ring->bh_thread_name, DRIVER_NAME"-recv-%s-%u",
 			p9fdev->tag, idx);
@@ -289,7 +290,7 @@ static int p9front_allocate_dev_ring(struct p9front_dev *p9fdev, int idx)
 out_free_thread:
 	if (ring->bh_thread_name)
 		free(ring->bh_thread_name);
-	uk_thread_kill(ring->bh_thread);
+	flexos_gate(libuksched, uk_thread_kill, ring->bh_thread);
 out_free_grants:
 	for (i = 0; i < (1 << p9fdev->ring_order); i++)
 		gnttab_end_access(ring->intf->ref[i]);

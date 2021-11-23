@@ -31,17 +31,36 @@ SECTIONS
 {
 	. = 0x100000;
 
+	.multiboot_header :
+	{
+		KEEP (*(.data.boot))
+	}
+
+	. = ALIGN(__PAGE_SIZE);
+	_sshared = .;
+	.data_shared :
+	{
+		KEEP (*(.data_shared .data_shared.*))
+		. = ALIGN(__PAGE_SIZE);
+		/* this padding might not be actually needed */
+		. = . + 0x1000;
+	}
+	_eshared = .;
+
 	/* Code */
 	_text = .;
 	.text :
 	{
 		/* prevent linker gc from removing multiboot header */
-		KEEP (*(.data.boot))
 		*(.text.boot)
 
+		*(.text_shared)
 		*(.text)
 		*(.text.*)
 	}
+
+	/* __FLEXOS MARKER__: insert compartment text sections here. */
+
 	_etext = .;
 
 	EXCEPTION_SECTIONS
@@ -72,19 +91,24 @@ SECTIONS
 	. = ALIGN(0x8);
 	.init_array : {
 		PROVIDE_HIDDEN (__init_array_start = .);
-		KEEP (*(SORT_BY_INIT_PRIORITY(.init_array.*) SORT_BY_INIT_PRIORITY(.ctors.*)))
-		KEEP (*(.init_array .ctors))
+		/* __FLEXOS MARKER__: insert compartment init array sections here. */
 		PROVIDE_HIDDEN (__init_array_end = .);
 	}
 	_ectors = .;
 
 	TLS_SECTIONS
 
+	/* -- compartment data sections begin -- */
+	/* __FLEXOS MARKER__: insert compartment data sections here. */
+	/* -- compartment data sections end -- */
+
 	/* Read-write data (initialized) */
 	. = ALIGN(__PAGE_SIZE);
 	_data = .;
 	.data :
 	{
+		*(.data_comp0)
+		*(.data_comp0.*)
 		*(.data)
 		*(.data.*)
 	}
@@ -95,16 +119,23 @@ SECTIONS
 	__bss_start = .;
 	.bss :
 	{
+		*(.bss_comp0)
+		*(.bss_comp0.*)
 		*(.bss)
 		*(.bss.*)
 		*(COMMON)
 		. = ALIGN(__PAGE_SIZE);
 	}
 
+	/* -- compartment bss sections begin -- */
+	/* __FLEXOS MARKER__: insert compartment bss sections here. */
+	/* -- compartment bss sections end -- */
+
 	/* We keep the interrupt stack on a different section
 	 * given that it may have a big alignment and it would
 	 * change the entire binary layout
 	 */
+	_intrstack_start = .;
 	.intrstack :
 	{
 		*(.intrstack)

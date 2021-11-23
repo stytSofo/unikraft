@@ -80,6 +80,22 @@ extern unsigned long sched_have_pending_events;
 
 void _ukplat_irq_handle(unsigned long irq)
 {
+#if CONFIG_LIBFLEXOS_INTELPKU
+	/* save PKRU state */
+	unsigned long pkru = rdpkru();
+
+	/* Interrupt handlers can execute at any point in time. Such
+	 * handlers can access data in a variety of compartments. An
+	 * ideal approach would be to establish a mapping such as
+	 * (interrupt, compartment), in which case we would do a domain
+	 * transition now. However, for the sake of simplicity, this
+	 * prototype simply trusts the handler.
+	 *
+	 * TODO FLEXOS: interrupt handler domain transitions.
+	 */
+	wrpkru(0x0);
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
+
 	struct irq_handler *h;
 
 	UK_SLIST_FOREACH(h, &irq_handlers[irq], entries) {
@@ -110,6 +126,10 @@ void _ukplat_irq_handle(unsigned long irq)
 
 exit_ack:
 	intctrl_ack_irq(irq);
+#if CONFIG_LIBFLEXOS_INTELPKU
+	/* restore PKRU state */
+	wrpkru(pkru);
+#endif /* CONFIG_LIBFLEXOS_INTELPKU */
 }
 
 int ukplat_irq_init(struct uk_alloc *a)

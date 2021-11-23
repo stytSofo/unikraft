@@ -32,6 +32,7 @@
  */
 
 #include <uk/config.h>
+#include <flexos/isolation.h>
 #include <stdio.h>
 #include <string.h>
 #include <vfscore/file.h>
@@ -87,7 +88,8 @@ static struct pipe_buf *pipe_buf_alloc(int capacity)
 
 	UK_ASSERT(POWER_OF_2(capacity));
 
-	pipe_buf = malloc(sizeof(*pipe_buf));
+	/* FIXME FLEXOS this is too much shared data */
+	pipe_buf = flexos_malloc_whitelist(sizeof(*pipe_buf), libuksched);
 	if (!pipe_buf)
 		return NULL;
 
@@ -100,10 +102,10 @@ static struct pipe_buf *pipe_buf_alloc(int capacity)
 	pipe_buf->capacity = capacity;
 	pipe_buf->cons = 0;
 	pipe_buf->prod = 0;
-	uk_mutex_init(&pipe_buf->rdlock);
-	uk_mutex_init(&pipe_buf->wrlock);
-	uk_waitq_init(&pipe_buf->rdwq);
-	uk_waitq_init(&pipe_buf->wrwq);
+	flexos_gate(uklock, uk_mutex_init,&pipe_buf->rdlock);
+	flexos_gate(uklock, uk_mutex_init,&pipe_buf->wrlock);
+	flexos_gate(libuksched, uk_waitq_init, &pipe_buf->rdwq);
+	flexos_gate(libuksched, uk_waitq_init, &pipe_buf->wrwq);
 
 	return pipe_buf;
 }
@@ -254,7 +256,7 @@ static int pipe_write(struct vnode *vnode,
 		return -EPIPE;
 	}
 
-	uk_mutex_lock(&pipe_buf->wrlock);
+	flexos_gate(uklock, uk_mutex_lock, &pipe_buf->wrlock);
 	while (data_available && uio_idx < buf->uio_iovcnt) {
 		struct iovec *iovec = &buf->uio_iov[uio_idx];
 		unsigned long off = 0;
@@ -272,10 +274,33 @@ static int pipe_write(struct vnode *vnode,
 				} else {
 					/* Wait until data available */
 					while (!pipe_buf_can_write(pipe_buf)) {
-						uk_mutex_unlock(&pipe_buf->wrlock);
-						uk_waitq_wait_event(&pipe_buf->wrwq,
-							pipe_buf_can_write(pipe_buf));
-						uk_mutex_lock(&pipe_buf->wrlock);
+						flexos_gate(uklock, uk_mutex_unlock, &pipe_buf->wrlock);
+						do {
+							struct uk_thread *__current;
+							unsigned long flags;
+							DEFINE_WAIT(__wait);
+							if (pipe_buf_can_write(pipe_buf))
+								break;
+							for (;;) {
+								__current = uk_thread_current();
+								/* protect the list */
+								flags = ukplat_lcpu_save_irqf();
+								flexos_gate(libuksched, uk_waitq_add, &pipe_buf->wrwq, __wait);
+								flexos_gate(libuksched, uk_thread_set_wakeup_time, __current, 0);
+								flexos_gate(libuksched, clear_runnable, __current);
+								flexos_gate(libuksched, uk_sched_thread_blocked, __current);
+								ukplat_lcpu_restore_irqf(flags);
+								if (pipe_buf_can_write(pipe_buf))
+									break;
+								flexos_gate(libuksched, uk_sched_yield);
+							}
+							flags = ukplat_lcpu_save_irqf();
+							/* need to wake up */
+							flexos_gate(libuksched, uk_thread_wake, __current);
+							flexos_gate(libuksched, uk_waitq_remove, &pipe_buf->wrwq, __wait);
+							ukplat_lcpu_restore_irqf(flags);
+						} while (0);
+						flexos_gate(uklock, uk_mutex_lock, &pipe_buf->wrlock);
 					}
 				}
 
@@ -286,13 +311,13 @@ static int pipe_write(struct vnode *vnode,
 				off += written_bytes;
 
 				/* wake some readers */
-				uk_waitq_wake_up(&pipe_buf->rdwq);
+				flexos_gate(libuksched, uk_waitq_wake_up, &pipe_buf->rdwq);
 			}
 		}
 
 		uio_idx++;
 	}
-	uk_mutex_unlock(&pipe_buf->wrlock);
+	flexos_gate(uklock, uk_mutex_unlock, &pipe_buf->wrlock);
 
 	return 0;
 }
@@ -307,9 +332,9 @@ static int pipe_read(struct vnode *vnode,
 	bool data_available = true;
 	int uio_idx = 0;
 
-	uk_mutex_lock(&pipe_buf->rdlock);
+	flexos_gate(uklock, uk_mutex_lock, &pipe_buf->rdlock);
 	if (nonblocking && !pipe_buf_can_read(pipe_buf)) {
-		uk_mutex_unlock(&pipe_buf->rdlock);
+		flexos_gate(uklock, uk_mutex_unlock, &pipe_buf->rdlock);
 		return EAGAIN;
 	}
 
@@ -330,10 +355,33 @@ static int pipe_read(struct vnode *vnode,
 				} else {
 					/* Wait until data available */
 					while (!pipe_buf_can_read(pipe_buf)) {
-						uk_mutex_unlock(&pipe_buf->rdlock);
-						uk_waitq_wait_event(&pipe_buf->rdwq,
-							pipe_buf_can_read(pipe_buf));
-						uk_mutex_lock(&pipe_buf->rdlock);
+						flexos_gate(uklock, uk_mutex_unlock, &pipe_buf->rdlock);
+						do {
+							struct uk_thread *__current;
+							unsigned long flags;
+							DEFINE_WAIT(__wait);
+							if (pipe_buf_can_read(pipe_buf))
+								break;
+							for (;;) {
+								__current = uk_thread_current();
+								/* protect the list */
+								flags = ukplat_lcpu_save_irqf();
+								flexos_gate(libuksched, uk_waitq_add, &pipe_buf->rdwq, __wait);
+								flexos_gate(libuksched, uk_thread_set_wakeup_time, __current, 0);
+								flexos_gate(libuksched, clear_runnable, __current);
+								flexos_gate(libuksched, uk_sched_thread_blocked, __current);
+								ukplat_lcpu_restore_irqf(flags);
+								if (pipe_buf_can_read(pipe_buf))
+									break;
+								flexos_gate(libuksched, uk_sched_yield);
+							}
+							flags = ukplat_lcpu_save_irqf();
+							/* need to wake up */
+							flexos_gate(libuksched, uk_thread_wake, __current);
+							flexos_gate(libuksched, uk_waitq_remove, &pipe_buf->rdwq, __wait);
+							ukplat_lcpu_restore_irqf(flags);
+						} while (0);
+						flexos_gate(uklock, uk_mutex_lock, &pipe_buf->rdlock);
 					}
 				}
 
@@ -344,13 +392,13 @@ static int pipe_read(struct vnode *vnode,
 				off += read_bytes;
 
 				/* wake some writers */
-				uk_waitq_wake_up(&pipe_buf->wrwq);
+				flexos_gate(libuksched, uk_waitq_wake_up, &pipe_buf->wrwq);
 			}
 		}
 
 		uio_idx++;
 	}
-	uk_mutex_unlock(&pipe_buf->rdlock);
+	flexos_gate(uklock, uk_mutex_unlock, &pipe_buf->rdlock);
 
 	return 0;
 }
@@ -392,9 +440,9 @@ static int pipe_ioctl(struct vnode *vnode,
 
 	switch (com) {
 	case FIONREAD:
-		uk_mutex_lock(&pipe_buf->rdlock);
+		flexos_gate(uklock, uk_mutex_lock, &pipe_buf->rdlock);
 		*((int *) data) = pipe_buf_get_available(pipe_buf);
-		uk_mutex_unlock(&pipe_buf->rdlock);
+		flexos_gate(uklock, uk_mutex_unlock, &pipe_buf->rdlock);
 		return 0;
 	default:
 		return -EINVAL;
@@ -478,7 +526,7 @@ static int pipe_fd_alloc(struct pipe_file *pipe_file, int flags)
 	}
 
 	/* Allocate file, dentry, and vnode */
-	vfs_file = calloc(1, sizeof(*vfs_file));
+	vfs_file = flexos_calloc_whitelist(1, sizeof(*vfs_file));
 	if (!vfs_file) {
 		ret = -ENOMEM;
 		goto ERR_MALLOC_VFS_FILE;
@@ -492,7 +540,7 @@ static int pipe_fd_alloc(struct pipe_file *pipe_file, int flags)
 		goto ERR_ALLOC_VNODE;
 	}
 
-	uk_mutex_unlock(&p_vnode->v_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &p_vnode->v_lock);
 
 	p_dentry = dentry_alloc(NULL, p_vnode, "/");
 	if (!p_dentry) {
@@ -526,7 +574,7 @@ ERR_VFS_INSTALL:
 ERR_ALLOC_DENTRY:
 	vrele(p_vnode);
 ERR_ALLOC_VNODE:
-	free(vfs_file);
+	flexos_free_whitelist(vfs_file);
 ERR_MALLOC_VFS_FILE:
 	vfscore_put_fd(vfs_fd);
 ERR_EXIT:

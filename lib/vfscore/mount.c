@@ -52,6 +52,7 @@
 #include <vfscore/prex.h>
 #include <vfscore/dentry.h>
 #include <vfscore/vnode.h>
+#include <flexos/isolation.h>
 
 /*
  * List for VFS mount points.
@@ -62,7 +63,7 @@ UK_LIST_HEAD(mount_list);
 /*
  * Global lock to access mount point.
  */
-static struct uk_mutex mount_lock = UK_MUTEX_INITIALIZER(mount_lock);
+static struct uk_mutex mount_lock __section(".data_shared") = UK_MUTEX_INITIALIZER(mount_lock);
 
 extern const struct vfscore_fs_type *uk_fslist_start;
 extern const struct vfscore_fs_type *uk_fslist_end;
@@ -119,7 +120,7 @@ mount(const char *dev, const char *dir, const char *fsname, unsigned long flags,
 	struct vnode *vp = NULL;
 	int error;
 
-	uk_pr_info("VFS: mounting %s at %s\n", fsname, dir);
+	// flexos_gate(ukdebug, uk_pr_info, FLEXOS_SHARED_LITERAL("VFS: mounting %s at %s\n"), fsname, dir);
 
 	if (!dir || *dir == '\0')
 		return ENOENT;
@@ -148,16 +149,16 @@ mount(const char *dev, const char *dir, const char *fsname, unsigned long flags,
 	/* static mutex sys_mount_lock; */
 	/* SCOPE_LOCK(sys_mount_lock); */
 
-	uk_mutex_lock(&mount_lock);
+	flexos_gate(uklock, uk_mutex_lock, &mount_lock);
 	uk_list_for_each_entry(mp, &mount_list, mnt_list) {
 		if (!strcmp(mp->m_path, dir) ||
 		    (device && mp->m_dev == device)) {
 			error = EBUSY;  /* Already mounted */
-			uk_mutex_unlock(&mount_lock);
+			flexos_gate(uklock, uk_mutex_unlock, &mount_lock);
 			goto err1;
 		}
 	}
-	uk_mutex_unlock(&mount_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &mount_lock);
 	/*
 	 * Create VFS mount entry.
 	 */
@@ -205,7 +206,7 @@ mount(const char *dev, const char *dir, const char *fsname, unsigned long flags,
 	vp->v_flags = VROOT;
 	vp->v_mode = S_IFDIR | S_IRUSR | S_IWUSR | S_IXUSR;
 
-	mp->m_root = dentry_alloc(NULL, vp, "/");
+	mp->m_root = dentry_alloc(NULL, vp, FLEXOS_SHARED_LITERAL("/"));
 	if (!mp->m_root) {
 		error = ENOMEM;
 		vput(vp);
@@ -225,9 +226,9 @@ mount(const char *dev, const char *dir, const char *fsname, unsigned long flags,
 	/*
 	 * Insert to mount list
 	 */
-	uk_mutex_lock(&mount_lock);
+	flexos_gate(uklock, uk_mutex_lock, &mount_lock);
 	uk_list_add_tail(&mp->mnt_list, &mount_list);
-	uk_mutex_unlock(&mount_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &mount_lock);
 
 	return 0;   /* success */
  err4:
@@ -262,9 +263,9 @@ umount2(const char *path, int flags)
 	struct mount *mp, *tmp;
 	int error, pathlen;
 
-	uk_pr_info("VFS: unmounting %s\n", path);
+	flexos_gate(ukdebug, uk_pr_info, FLEXOS_SHARED_LITERAL("VFS: unmounting %s\n"), path);
 
-	uk_mutex_lock(&mount_lock);
+	flexos_gate(uklock, uk_mutex_lock, &mount_lock);
 
 	pathlen = strlen(path);
 	if (pathlen >= MAXPATHLEN) {
@@ -305,7 +306,7 @@ found:
 		device_close(mp->m_dev);
 	free(mp);
  out:
-	uk_mutex_unlock(&mount_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &mount_lock);
 	return error;
 }
 
@@ -368,7 +369,7 @@ sys_pivot_root(const char *new_root, const char *put_old)
 void sync(void)
 {
 	struct mount *mp;
-	uk_mutex_lock(&mount_lock);
+	flexos_gate(uklock, uk_mutex_lock, &mount_lock);
 
 	/* Call each mounted file system. */
 	uk_list_for_each_entry(mp, &mount_list, mnt_list) {
@@ -377,7 +378,7 @@ void sync(void)
 #ifdef HAVE_BUFFERS
 	bio_sync();
 #endif
-	uk_mutex_unlock(&mount_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &mount_lock);
 }
 
 /*
@@ -425,7 +426,7 @@ vfs_findroot(const char *path, struct mount **mp, char **root)
 		return -1;
 
 	/* Find mount point from nearest path */
-	uk_mutex_lock(&mount_lock);
+	flexos_gate(uklock, uk_mutex_lock, &mount_lock);
 	uk_list_for_each_entry(tmp, &mount_list, mnt_list) {
 		len = count_match(path, tmp->m_path);
 		if (len > max_len) {
@@ -433,7 +434,7 @@ vfs_findroot(const char *path, struct mount **mp, char **root)
 			m = tmp;
 		}
 	}
-	uk_mutex_unlock(&mount_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &mount_lock);
 	if (m == NULL)
 		return -1;
 	*root = (char *)(path + max_len);
@@ -484,15 +485,15 @@ void
 vfscore_mount_dump(void)
 {
 	struct mount *mp;
-	uk_mutex_lock(&mount_lock);
+	flexos_gate(uklock, uk_mutex_lock, &mount_lock);
 
-	uk_pr_debug("vfscore_mount_dump\n");
-	uk_pr_debug("dev      count root\n");
-	uk_pr_debug("-------- ----- --------\n");
+	flexos_gate(ukdebug, uk_pr_debug, FLEXOS_SHARED_LITERAL("vfscore_mount_dump\n"));
+	flexos_gate(ukdebug, uk_pr_debug, FLEXOS_SHARED_LITERAL("dev      count root\n"));
+	flexos_gate(ukdebug, uk_pr_debug, FLEXOS_SHARED_LITERAL("-------- ----- --------\n"));
 
 	uk_list_for_each_entry(mp, &mount_list, mnt_list) {
-		uk_pr_debug("%8p %5d %s\n", mp->m_dev, mp->m_count, mp->m_path);
+		flexos_gate(ukdebug, uk_pr_debug, FLEXOS_SHARED_LITERAL("%8p %5d %s\n"), mp->m_dev, mp->m_count, mp->m_path);
 	}
-	uk_mutex_unlock(&mount_lock);
+	flexos_gate(uklock, uk_mutex_unlock, &mount_lock);
 }
 #endif

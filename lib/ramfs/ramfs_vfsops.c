@@ -36,6 +36,7 @@
 #include <vfscore/vnode.h>
 #include <vfscore/mount.h>
 #include <vfscore/dentry.h>
+#include <flexos/isolation.h>
 
 #include "ramfs.h"
 
@@ -79,7 +80,7 @@ ramfs_mount(struct mount *mp, const char *dev __unused,
 {
 	struct ramfs_node *np;
 
-	uk_pr_debug("%s: dev=%s\n", __func__, dev);
+	//flexos_gate(ukdebug, uk_pr_debug, FLEXOS_SHARED_LITERAL("%s: dev=%s\n"), __func__, dev);
 
 	/* Create a root node */
 	np = ramfs_allocate_node("/", VDIR);

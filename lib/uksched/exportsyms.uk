@@ -6,7 +6,10 @@ uk_sched_create
 uk_sched_start
 uk_sched_idle_init
 uk_sched_thread_create
+uk_sched_thread_create_rpc_only
+uk_sched_thread_create_main
 uk_sched_thread_destroy
+uk_sched_thread_destroy_rpc_only
 uk_sched_thread_kill
 uk_sched_thread_sleep
 uk_sched_thread_exit
@@ -30,6 +33,9 @@ uk_thread_attr_set_prio
 uk_thread_attr_get_prio
 uk_thread_attr_set_timeslice
 uk_thread_attr_get_timeslice
+uk_sched_thread_create_main
+uk_thread_inherit_signal_mask
 
 # Newlib related
 __getreent
+wq_entries
