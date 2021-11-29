@@ -274,8 +274,11 @@ int uk_thread_init(struct uk_thread *thread,
 	thread->prv = NULL;
 
 	// FIXME
-	//thread->reent = flexos_malloc_whitelist(sizeof(struct _reent), libc);
+#if CONFIG_LIBFLEXOS_VMEPT
 	thread->reent = malloc(sizeof(struct _reent));
+#else
+	thread->reent = flexos_malloc_whitelist(sizeof(struct _reent), libc);
+#endif
 	if (!thread->reent) {
 		flexos_gate(libukdebug, uk_pr_crit, FLEXOS_SHARED_LITERAL(
 				"Could not allocate reent!"));
