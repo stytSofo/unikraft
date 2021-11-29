@@ -108,7 +108,6 @@ extern struct uk_alloc *_uk_alloc_head;
 
 #if CONFIG_LIBFLEXOS_INTELPKU
 #include <flexos/impl/intelpku.h>
-#endif /* CONFIG_LIBFLEXOS_INTELPKU */
 
 /* FIXME FLEXOS: It seems that GCC optimizations modify this code so that
  * flexos_comp1_alloc is read even if it is not the current compartment's
@@ -119,6 +118,7 @@ extern struct uk_alloc *_uk_alloc_head;
 
 #pragma GCC push_options
 #pragma GCC optimize("O0")
+#endif
 static inline struct uk_alloc *uk_alloc_get_default(void)
 {
 #if CONFIG_LIBFLEXOS_INTELPKU
@@ -143,7 +143,9 @@ static inline struct uk_alloc *uk_alloc_get_default(void)
 
 	return _uk_alloc_head;
 }
+#if CONFIG_LIBFLEXOS_INTELPKU
 #pragma GCC pop_options
+#endif
 
 /* wrapper functions */
 static inline void *uk_do_malloc(struct uk_alloc *a, size_t size)
