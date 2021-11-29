@@ -135,7 +135,7 @@ static inline struct uk_alloc *uk_alloc_get_default(void)
 		/* reserved for shared data */
                 __attribute__((fallthrough));
 	default:
-		uk_pr_err("Allocating from a context where the current "
+		uk_pr_debug("Allocating from a context where the current "
 			 "compartment cannot be clearly determined.");
 		return _uk_alloc_head;
         }
