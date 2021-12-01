@@ -50,7 +50,7 @@ token
 and run instead:
 
 ```
-$ docker build --build-arg UK_KRAFT_GITHUB_TOKEN="<YOUR TOKEN>" --tag flexos-dev
+$ docker build -f flexos.dockerfile --build-arg UK_KRAFT_GITHUB_TOKEN="<YOUR TOKEN>" --tag flexos-dev .
 ```
 
 Run the container as following:

@@ -1,9 +1,10 @@
 import glob, os
 import csv
+import re
 
 def write_csv(outfile, lines):
-    f = open(outfile, 'w+', newline='')
-    writer = csv.writer(f, delimiter=',',
+    f = open(outfile, 'w+', newline='\n')
+    writer = csv.writer(f, delimiter=',',lineterminator='\n',
                             quotechar='|', quoting=csv.QUOTE_MINIMAL)
 
     for line in lines:
