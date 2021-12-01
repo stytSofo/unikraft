@@ -28,6 +28,11 @@ NEC Laboratories Europe GmbH. It has been published in HotOS'21 and ASPLOS'22.
 > configurations, FlexOS performs similarly or better than several
 > baselines/competitors.
 
+The name of this repository is "Unikraft", a reminder that FlexOS is a friendly
+fork of Unikraft
+([EuroSys'21](https://dl.acm.org/doi/abs/10.1145/3447786.3456248) Best Paper
+Award).
+
 ## Installing from the Docker container
 
 Clone this repository and build the Docker container:
@@ -41,7 +46,7 @@ $ popd
 
 If the build fails because you are rate-limited by GitHub, generate an app
 token
-([instructions](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token))
+([instructions](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token)),
 and run instead:
 
 ```
@@ -54,12 +59,15 @@ Run the container as following:
 $ docker run --privileged -ti flexos-dev bash
 ```
 
+This will give you access to a FlexOS development environment under
+`/root/.unikraft`.
+
 ## Installing from source
 
-The easiest approach to install FlexOS on your native system is to follow the
-Dockerfile instructions in `docker/flexos.dockerfile`. Note that the
-recommended system is Debian 10. We strongly recommend the Docker-based
-approach.
+We strongly recommend the Docker-based approach.  If you really want to install
+FlexOS on your base system, the easiest approach is to follow the Dockerfile
+instructions in `docker/flexos.dockerfile`. Note that the recommended system is
+Debian 10.
 
 ## Building FlexOS
 
@@ -96,12 +104,10 @@ compartments:
   - name: comp1
     mechanism:
       driver: intel-pku
-      noisolstack: false
     default: true
   - name: comp2
     mechanism:
       driver: intel-pku
-      noisolstack: false
 libraries:
   tlsf:
     version: staging
@@ -165,20 +171,18 @@ compartments:
   - name: comp1
     mechanism:
       driver: intel-pku
-      noisolstack: false
     default: true
   - name: comp2
     mechanism:
       driver: intel-pku
-      noisolstack: false
 ```
 
 Each compartment has a `name` and a `mechanism`.
 
 Each mechanism has a driver (for Intel MPK/PKU it's `intel-pku`, for VM-based
 `vmept`, for simple function calls `fcalls`), and possibly a number of
-driver-specific options. Intel MPK/PKU, for instance, can isolate or share the
-stack (`noisolstack`).
+driver-specific options (you might have come across `noisolstack`, but be aware
+that, as of now, this option does nothing).
 
 There is one `default` compartment. All libraries that have not been assigned a
 specific compartment will go into the default compartment.
