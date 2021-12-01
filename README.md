@@ -338,14 +338,86 @@ The `fcalls` debugging backend will replace all gates with simple function calls
 ### Automatic gate insertion
 
 We provide users with a simple tool to automatically insert gate placeholders
-in their code. The tool uses `cscope` to determine calls performed by a file
-outside of the current library, and
+in their code. The tool uses [Cscope](http://cscope.sourceforge.net/) to
+determine calls performed by a file outside of the current library, and
 [Coccinelle](https://github.com/coccinelle/coccinelle) to automatically insert
 a gate at this position. The tool is available under
 `flexos-support/porthelper` and comes preinstalled in the FlexOS docker
 container.
 
-*TODO: add more documentation here on how to use the tool!*
+We illustrate the use of the too with the iPerf server:
+
+```
+root@host# docker run --privileged -ti flexos-dev bash
+root@c2087bc9c8ca:~/.unikraft# pushd libs/iperf/; git checkout unikraft-baseline; popd
+root@c2087bc9c8ca:~/.unikraft# ./porthelper.sh libs/iperf/server.c 
+HANDLING: libs/iperf/server.c
+diff = 
+--- libs/iperf/server.c
++++ /tmp/cocci-output-187-0c6434-server.c
+@@ -15,9 +15,9 @@ int run_server(int RECVBUFFERSIZE)
+     struct sockaddr_in servaddr;
+     char *buf = malloc(1024 * 512 * sizeof(char));
+ 
+-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
++    flexos_gate(liblwip, sockfd, socket, AF_INET, SOCK_STREAM, 0);
+     if (sockfd == -1) {
+-        printf("Socket failed\n");
++        flexos_gate(libc, printf, "Socket failed\n");
+         return 0;
+     }
+ 
+@@ -29,32 +29,34 @@ int run_server(int RECVBUFFERSIZE)
+     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+     servaddr.sin_port = htons(12345);
+ 
+-    rc = bind(sockfd, (struct sockaddr *) &servaddr, sizeof(servaddr));
++    flexos_gate(liblwip, rc, bind, sockfd, (struct sockaddr *)&servaddr,
++                sizeof(servaddr));
+     if (rc != 0) {
+-        printf("Bind failed\n");
++        flexos_gate(libc, printf, "Bind failed\n");
+         return 0;
+     }
+ 
+-    rc = listen(sockfd, 5);
++    flexos_gate(liblwip, rc, listen, sockfd, 5);
+     if (rc != 0) {
+-        printf("Listen failed\n");
++        flexos_gate(libc, printf, "Listen failed\n");
+         return 0;
+     }
+ 
+     len = sizeof(cli);
+ 
+-    connfd = accept(sockfd, (struct sockaddr *) &cli, &len);
++    flexos_gate(liblwip, connfd, accept, sockfd, (struct sockaddr *)&cli,
++                &len);
+ 
+     if (connfd < 0) {
+-        printf("Accept failed\n");
++        flexos_gate(libc, printf, "Accept failed\n");
+         return 0;
+     }
+ 
+     while (1) {
+-	rc = recv(connfd, buf, RECVBUFFERSIZE, 0);
++	flexos_gate(liblwip, rc, recv, connfd, buf, RECVBUFFERSIZE, 0);
+ 
+         if (rc < 0) {
+-            printf("Read failed with %d\n", rc);
++            flexos_gate(libc, printf, "Read failed with %d\n", rc);
+             break;
+         }
+     }
+```
+
+In the case of the iPerf server, the tool is able to correctly replace all
+external function calls.
+
+Note that this tool might miss calls that are realized with non-standard
+patterns (source to source transformation is hard), as well as indirect
+function calls. In these cases, the next section will come handy.
 
 ### Checking gate insertions with MPK (and other intra-AS isolation technologies)
 
