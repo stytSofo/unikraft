@@ -1,7 +1,32 @@
 # FlexOS: Making OS Isolation Flexible
 
-Warning: this README is outdated. We will provide up-to-date documentation
-as part of our ASPLOS'22 AE submission.
+This repository contains the main tree of our FlexOS proof-of-concept. FlexOS
+aims to decouple isolation from the design of the OS. FlexOS is a cooperation
+between the University of Manchester, University Politehnica of Bucharest, and
+NEC Laboratories Europe GmbH. It has been published in HotOS'21 and ASPLOS'22.
+
+> **Abstract**:  At design time, modern operating systems are locked in a
+> specific safety and isolation strategy that mixes one or more
+> hardware/software protection mechanisms (e.g. user/kernel separation);
+> revisiting these choices after deployment requires a major refactoring effort.
+> This rigid approach shows its limits given the wide variety of modern
+> applications' safety/performance requirements, when new hardware isolation
+> mechanisms are rolled out, or when existing ones break.
+>
+> We present FlexOS, a novel OS allowing users to easily specialize the
+> safety and isolation strategy of an OS at compilation/deployment time
+> instead of design time. This modular LibOS is composed of fine-grained
+> components that can be isolated via a range of hardware protection mechanisms
+> with various data sharing strategies and additional software hardening. The
+> OS ships with an exploration technique helping the user navigate the vast
+> safety/performance design space it unlocks. We implement a prototype of the
+> system and demonstrate, for several applications (Redis/Nginx/SQLite),
+> FlexOS’ vast configuration space as well as the efficiency of the
+> exploration technique: we evaluate 80 FlexOS configurations for Redis and
+> show how that space can be probabilistically subset to the 5 safest ones under
+> a given performance budget. We also show that, under equivalent
+> configurations, FlexOS performs similarly or better than several
+> baselines/competitors.
 
 ## Installing from the Docker container
 
@@ -14,6 +39,15 @@ $ docker build -f flexos.dockerfile --tag flexos-dev .
 $ popd
 ```
 
+If the build fails because you are rate-limited by GitHub, generate an app
+token
+([instructions](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token))
+and run instead:
+
+```
+$ docker build --build-arg UK_KRAFT_GITHUB_TOKEN="<YOUR TOKEN>" --tag flexos-dev
+```
+
 Run the container as following:
 
 ```
@@ -22,80 +56,10 @@ $ docker run --privileged -ti flexos-dev bash
 
 ## Installing from source
 
-Should work on a recent enough Debian-based distro.
-
-Install a recent-enough Coccinelle:
-
-```
-$ git clone https://github.com/coccinelle/coccinelle
-$ apt-get build-dep coccinelle
-$ pushd coccinelle
-$ git checkout 99ec612852a88fae85dfad863daafccf55b874ce
-$ ./autogen
-$ ./configure
-$ make
-$ sudo make install
-$ popd
-$ # workaround a Coccinelle bug, if this fails don't worry...
-$ mkdir /usr/local/bin/lib
-$ ln -s /usr/local/lib/coccinelle /usr/local/bin/lib/coccinelle
-```
-
-Install `kraft` for FlexOS:
-
-```
-$ git clone git@github.com:project-flexos/kraft.git
-$ pushd kraft
-$ pip3 install -e .
-$ popd
-```
-
-Configure `kraft` for FlexOS:
-
-```
-$ cat > ~/.kraftrc<< EOF
-[fetch]
-prioritise_origin = true
-mirrors = [
-  "https://releases.unikraft.org/mirrors",
-]
-
-[configure]
-platform = "kvm"
-architecture = "x86_64"
-
-[list]
-origins = [
-  "git@github.com:project-flexos/lib-newlib.git",
-  "git@github.com:project-flexos/lib-tlsf.git",
-  "git@github.com:project-flexos/app-flexos-example.git",
-  "git@github.com:project-flexos/app-flexos-microbenchmarks.git",
-  "git@github.com:project-flexos/lib-flexos-example.git",
-  "git@github.com:project-flexos/lib-flexos-microbenchmarks.git",
-  "git@github.com:project-flexos/lib-lwip.git",
-  "git@github.com:project-flexos/lib-nginx.git",
-  "git@github.com:project-flexos/app-nginx.git",
-  "git@github.com:project-flexos/lib-redis.git",
-  "git@github.com:project-flexos/app-redis.git",
-  "git@github.com:project-flexos/lib-iperf.git",
-  "git@github.com:project-flexos/app-iperf.git",
-  "git@github.com:project-flexos/unikraft.git",
-  "git@github.com:project-flexos/lib-pthread-embedded.git"
-]
-EOF
-```
-
-Setup the FlexOS build environment:
-
-```
-$ kraft list update
-$ kraft -v list pull flexos-microbenchmarks@staging iperf@staging \
-		  newlib@staging tlsf@staging flexos-example@staging \
-		  lwip@staging redis@staging unikraft@staging \
-		  pthread-embedded@staging nginx@staging
-$ cd ~/.unikraft/ && ls
-apps  archs  libs  plats  unikraft
-```
+The easiest approach to install FlexOS on your native system is to follow the
+Dockerfile instructions in `docker/flexos.dockerfile`. Note that the
+recommended system is Debian 10. We strongly recommend the Docker-based
+approach.
 
 ## Building FlexOS
 
@@ -171,12 +135,13 @@ networks: {}
 $ kraft configure
 ```
 
-Now we have a fully set up system. We only have to build and run. The following commands are what you would run as part of your development workflow.
+Now we have a fully set up system. We only have to build and run. The following
+commands are what you would run as part of your development workflow.
 
-Build Redis with two compartments:
+Build Redis with two MPK compartments:
 
 ```
-$ make prepare && kraft -v build --compartmentalize '-j'
+$ make prepare && kraft -v build --no-progress --fast --compartmentalize
 ```
 
 Run the freshly built image:
@@ -186,6 +151,10 @@ $ kraft run --initrd ./redis.cpio -M 1024 ""
 ```
 
 ## FlexOS `kraft.yaml` primer
+
+In addition to this documentation, you can find examples of `kraft.yaml` files
+with MPK, EPT, and function call instanciation in our [AE
+repository](https://github.com/project-flexos/asplos22-ae).
 
 ### Declaring Compartments
 
@@ -206,13 +175,18 @@ compartments:
 
 Each compartment has a `name` and a `mechanism`.
 
-Each mechanism has a driver (for Intel MPK/PKU it's `intel-pku`, for VM-based `vmept`, for simple function calls `fcalls`), and possibly a number of driver-specific options. Intel MPK/PKU, for instance, can isolate or share the stack (`noisolstack`).
+Each mechanism has a driver (for Intel MPK/PKU it's `intel-pku`, for VM-based
+`vmept`, for simple function calls `fcalls`), and possibly a number of
+driver-specific options. Intel MPK/PKU, for instance, can isolate or share the
+stack (`noisolstack`).
 
-There is one `default` compartment. All libraries that have not been assigned a specific compartment will go into the default compartment.
+There is one `default` compartment. All libraries that have not been assigned a
+specific compartment will go into the default compartment.
 
-:warning: If you declare a compartment, make sure to actually use it! That is, it should either be default or used by a library (see below).
+:warning: If you declare a compartment, make sure to actually use it! That is,
+it should either be default or used by a library (see below).
 
-### Assigned compartments to libraries
+### Assign compartments to libraries
 
 Libraries can be assigned a compartment using `compartment`:
 
@@ -228,7 +202,8 @@ libraries:
 
 The value has to match the name of a previously declared compartment.
 
-Note that internal libraries (the ones whose source live under `unikraft/`) require an additional `is_core: true` parameter:
+Note that internal libraries (the ones whose source live under `unikraft/`)
+require an additional `is_core: true` parameter:
 
 ```
 libraries:
@@ -245,7 +220,9 @@ libraries:
 
 ## Development Workflow
 
-`kraft` rewrites the source code of microlibraries **in-place** to implement isolation primitives. If you change the isolation profile of the image (by editing `kraft.yaml`), make sure to thoroughly cleanup your setup.
+`kraft` rewrites the source code of microlibraries **in-place** to implement
+isolation primitives. If you change the isolation profile of the image (by
+editing `kraft.yaml`), make sure to thoroughly cleanup your setup.
 
 Here is a script that does it:
 
@@ -262,21 +239,22 @@ kraft list pull flexos-microbenchmarks@staging iperf@staging newlib@staging \
 		unikraft@staging pthread-embedded@staging nginx@staging
 ```
 
-I recommend putting this in `/usr/local/bin/kraftcleanup`.
+We recommend putting this in `/usr/local/bin/kraftcleanup`. This is done automatically
+by the Docker container.
 
 The usual workflow is then:
 
 ```
 $ kraftcleanup # clean
-$ make prepare && kraft -v build --compartmentalize '-j' # compile
+$ make prepare && kraft -v build --no-progress --fast --compartmentalize
 $ kraft run [...] # run
 ```
-
-If you didn't change `kraft.yaml`, a simple `make -j` should do the trick.
 
 :warning: Once again, if you do not run `kraftcleanup`, running `kraft build --compartmentalize` **will not** rewrite your code again because the rewriting is done in-place!
 
 :warning: `kraftcleanup` will **erase any modification done in your build repositories**! Make sure to have separate repositories that you use for the actual development otherwise you might **loose data**!
+
+:warning: Running `make prepare` before `kraft ... --fast ...` is necessary because of a bug in the Unikraft toolchain; the `prepare` rule does not support parallel execution.
 
 ## Backend-specific instructions
 
