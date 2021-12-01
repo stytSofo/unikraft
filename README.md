@@ -270,6 +270,8 @@ Generally, if you don't have a Xeon Bronze/Silver/Gold/Platinum, you don't have 
 
 ### VM/EPT
 
+#### Building QEMU with VM/EPT shared memory
+
 For the shared memory on KVM, we use a simple shared memory device in QEMU. To add this new device to QEMU, it is necessary to compile it from source code and add a patch.
 Here are steps for building QEMU for x86_64 architecture, with support for the shared memory device:
 
@@ -287,7 +289,9 @@ The above built QEMU binary should be used to run all Unikraft images that use t
 
 Additional remark regarding the `LINK_ARGS` edit. The relevant line is the one that begins with `LINK_ARGS = `, following the the line that begins with `build qemu-system-x86_64`.
 
-Building with the VM/EPT backend is no different from MPK (beginning from `~/.unikraft/apps`):
+#### Building FlexOS VM/EPT images
+
+Building FlexOS images with the VM/EPT backend is no different from MPK (beginning from `~/.unikraft/apps`):
 ```
 $ cd app-flexos-example
 $ make menuconfig # select VM/EPT in Library Configuration -> flexos -> FlexOS backend and also the KVM platform in Platform Configuration
@@ -295,8 +299,10 @@ $ make prepare
 $ kraft -v build --compartmentalize --fast
 ```
 
-This should results in two images being built under `build/`, one ending in
+This should result in two images being built under `build/`, one ending in
 `.comp0`, compartment 0, and the other one with `.comp1`.
+
+#### Running FlexOS VM/EPT images
 
 To run the application, compartment 0 has to be run first, then compartment 1, etc. This will be fixed soon.
 Here is an example command for running the built compartments:
