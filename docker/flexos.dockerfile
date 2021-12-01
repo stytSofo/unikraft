@@ -34,7 +34,7 @@ RUN apt install -y build-essential libncurses-dev python3 expect-dev moreutils \
 
 WORKDIR /root
 
-RUN git clone git@github.com:project-flexos/kraft.git
+RUN git clone https://github.com/project-flexos/kraft.git
 
 WORKDIR /root/kraft
 
@@ -62,23 +62,7 @@ RUN make install
 RUN mkdir /usr/local/bin/lib
 RUN ln -s /usr/local/lib/coccinelle /usr/local/bin/lib/coccinelle
 
-##############
-# FlexOS EPT QEMU
-
-RUN git clone https://github.com/qemu/qemu.git
-
-WORKDIR /root/qemu
-
-RUN apt install -y ninja-build
-RUN git checkout 9ad4c7c9b63f89c308fd988d509bed1389953c8b
-COPY resources/0001-Myshmem.patch /root/0001-Myshmem.patch
-RUN git apply /root/0001-Myshmem.patch
-RUN ./configure --target-list=x86_64-softmmu
-RUN sed -i -e 's/-lstdc++ -Wl,--end-group/-lrt -lstdc++ -Wl,--end-group/g' build/build.ninja
-RUN make -j8
-RUN cp build/qemu-system-x86_64 /root/qemu-system-ept
-RUN cp -r build/pc-bios /root/pc-bios
-RUN rm /root/0001-Myshmem.patch
+WORKDIR /root
 
 ##############
 # FlexOS
@@ -89,5 +73,24 @@ RUN kraft -v list pull flexos-microbenchmarks@staging iperf@staging \
 		  lwip@staging redis@staging unikraft@staging \
 		  pthread-embedded@staging nginx@staging
 RUN cp /root/.unikraft/unikraft/flexos-support/porthelper/* /root/.unikraft/
+
+##############
+# FlexOS EPT QEMU
+
+RUN git clone https://github.com/qemu/qemu.git
+
+WORKDIR /root/qemu
+
+RUN apt install -y ninja-build
+RUN git checkout 9ad4c7c9b63f89c308fd988d509bed1389953c8b
+RUN cp /root/.unikraft/unikraft/flexos-support/0001-Myshmem.patch /root/0001-Myshmem.patch
+RUN git apply /root/0001-Myshmem.patch
+RUN apt build-dep -y qemu-system-x86
+RUN ./configure --target-list=x86_64-softmmu
+RUN sed -i -e 's/-lstdc++ -Wl,--end-group/-lrt -lstdc++ -Wl,--end-group/g' build/build.ninja
+RUN make -j8
+RUN cp build/qemu-system-x86_64 /root/qemu-system-ept
+RUN cp -r build/pc-bios /root/pc-bios
+RUN rm /root/0001-Myshmem.patch
 
 WORKDIR /root/.unikraft
