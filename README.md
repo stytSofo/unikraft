@@ -335,7 +335,19 @@ The `fcalls` debugging backend will replace all gates with simple function calls
 
 ## Porting Tips & Tricks
 
-### Gate insertion with MPK (and other intra-AS isolation technologies)
+### Automatic gate insertion
+
+We provide users with a simple tool to automatically insert gate placeholders
+in their code. The tool uses `cscope` to determine calls performed by a file
+outside of the current library, and
+[Coccinelle](https://github.com/coccinelle/coccinelle) to automatically insert
+a gate at this position. The tool is available under
+`flexos-support/porthelper` and comes preinstalled in the FlexOS docker
+container.
+
+*TODO: add more documentation here on how to use the tool!*
+
+### Checking gate insertions with MPK (and other intra-AS isolation technologies)
 
 The first part of porting a library to run as isolated component is to insert gates.
 

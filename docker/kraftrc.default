@@ -10,19 +10,19 @@ architecture = "x86_64"
 
 [list]
 origins = [
-  "git@github.com:ukflexos/lib-newlib.git",
-  "git@github.com:ukflexos/lib-tlsf.git",
-  "git@github.com:ukflexos/app-flexos-example.git",
-  "git@github.com:ukflexos/app-flexos-microbenchmarks.git",
-  "git@github.com:ukflexos/lib-flexos-example.git",
-  "git@github.com:ukflexos/lib-flexos-microbenchmarks.git",
-  "git@github.com:ukflexos/lib-lwip.git",
-  "git@github.com:ukflexos/lib-nginx.git",
-  "git@github.com:ukflexos/app-nginx.git",
-  "git@github.com:ukflexos/lib-redis.git",
-  "git@github.com:ukflexos/app-redis.git",
-  "git@github.com:ukflexos/lib-iperf.git",
-  "git@github.com:ukflexos/app-iperf.git",
-  "git@github.com:ukflexos/unikraft.git",
-  "git@github.com:ukflexos/lib-pthread-embedded.git"
+  "git@github.com:project-flexos/lib-newlib.git",
+  "git@github.com:project-flexos/lib-tlsf.git",
+  "git@github.com:project-flexos/app-flexos-example.git",
+  "git@github.com:project-flexos/app-flexos-microbenchmarks.git",
+  "git@github.com:project-flexos/lib-flexos-example.git",
+  "git@github.com:project-flexos/lib-flexos-microbenchmarks.git",
+  "git@github.com:project-flexos/lib-lwip.git",
+  "git@github.com:project-flexos/lib-nginx.git",
+  "git@github.com:project-flexos/app-nginx.git",
+  "git@github.com:project-flexos/lib-redis.git",
+  "git@github.com:project-flexos/app-redis.git",
+  "git@github.com:project-flexos/lib-iperf.git",
+  "git@github.com:project-flexos/app-iperf.git",
+  "git@github.com:project-flexos/unikraft.git",
+  "git@github.com:project-flexos/lib-pthread-embedded.git"
 ]

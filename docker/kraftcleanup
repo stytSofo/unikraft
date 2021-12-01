@@ -2,7 +2,7 @@
 
 make properclean
 # git checkout . && git clean -xdf in all repositories would be fine too
-rm -rf /root/.kraftcache /root/.unikraft/libs /root/.unikraft/unikraft
+rm -rf /.kraftcache /.unikraft/libs /.unikraft/unikraft
 kraft list update
 kraft list pull flexos-microbenchmarks@staging iperf@staging newlib@staging \
 		tlsf@staging flexos-example@staging lwip@staging redis@staging \
