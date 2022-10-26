@@ -28,6 +28,7 @@ RUN apt install -y build-essential libncurses-dev python3 expect-dev moreutils \
 	qemu-utils curl gawk git procps socat uuid-runtime python3-pip libsqlite3-dev \
 	bc libiscsi-dev librbd1 libnfs-dev libgfapi0 libffi-dev libiperf-dev net-tools \
 	bridge-utils iperf dnsmasq ninja-build gdb cscope
+RUN pip3 install -U setuptools==41.0
 
 ##############
 # Toolchain
