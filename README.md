@@ -262,6 +262,37 @@ $ kraft run [...] # run
 
 ## Backend-specific instructions
 
+### Morello
+
+#### Building instructions
+
+**NOTE** You must use a debian 11+ environment for building FlexOS as opposed to the debian 10 environenment set up for regular builds
+
+1. You will need the morello bare metal llvm toolchain: https://git.morello-project.org/morello/llvm-project-releases/-/tree/morello/baremetal-release-1.5
+2. Download the arm gcc toolchain: https://developer.arm.com/downloads/-/arm-gnu-toolchain-downloads
+3. Add the following to `<PATH TO UNIKRAFT>/.unikraft/unikraft/Makefile`:
+```
+LD := <ARM GCC TOOLCHAIN>/bin/aarch64-none-elf-gcc
+CC := <LLVM TOOLCHAIN>/bin/clang
+STRIP := <ARM GCC TOOLCHAIN>/bin/aarch64-none-elf-strip
+OBJCOPY := <ARM GCC TOOLCHAIN>/bin/aarch64-none-elf-objcopy
+ASFLAGS += -target aarch64-none-elf
+CFLAGS += -target aarch64-none-elf
+```
+4. Get the morello platform from here: https://github.com/jkressel/uk-plat-morello
+5. Add the line `$(eval $(call _import_lib,$(UK_PLAT_BASE)/uk-plat-morello))` to the end of `<PATH TO UNIKRAFT>/.unikraft/unikraft/plat/Makefile.uk`
+6. Locate the source directory of the kraft tool. In the file `const.py`, locate the following:
+```
+UK_CORE_PLATS = [
+    'kvm',
+    'xen',
+    'linuxu',
+]
+```
+add `'morello'` to the list. Then rebuild and install kraft using pip3.
+
+7. Build flexos as normal using kraft.
+
 ### Intel MPK/PKU
 
 :warning: You can build on any machine, but **running requires a CPU that supports MPK**!
