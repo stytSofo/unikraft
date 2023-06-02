@@ -89,6 +89,8 @@ unikraft:
   version: staging
   kconfig:
     - CONFIG_LIBFLEXOS=y
+    - CONFIG_LIBVFSCORE_AUTOMOUNT_ROOTFS=y
+    - CONFIG_LIBVFSCORE_ROOTFS_RAMFS=y
 targets:
   - architecture: x86_64
     platform: kvm
@@ -133,7 +135,7 @@ $ make prepare && kraft -v build --no-progress --fast --compartmentalize
 Run the freshly built image:
 
 ```
-$ kraft run -M 1024 ""
+$ kraft run --initrd ./hello.cpio -M 1024 ""
 ```
 
 ### Redis
