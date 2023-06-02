@@ -62,16 +62,81 @@ $ docker run --privileged -ti flexos-dev bash
 This will give you access to a FlexOS development environment under
 `/root/.unikraft`.
 
+If the build fails for another reason, please open an issue in this repository.
+
 ## Installing from source
 
 We strongly recommend the Docker-based approach.  If you really want to install
 FlexOS on your base system, the easiest approach is to follow the Dockerfile
 instructions in `docker/flexos.dockerfile`. Note that the recommended system is
-Debian 10.
+Debian 10. We will not help troubleshooting issues on another system.
 
 ## Building FlexOS
 
 Applies to both Docker & installation from source.
+
+### Simple Hello World
+
+Configure the hello world application:
+
+```
+$ cd ~/.unikraft/apps/flexos-example
+$ cat ./kraft.yaml
+---
+specification: '0.6'
+name: flexos-example
+unikraft:
+  version: staging
+  kconfig:
+    - CONFIG_LIBFLEXOS=y
+targets:
+  - architecture: x86_64
+    platform: kvm
+compartments:
+  - name: comp1
+    mechanism:
+      driver: intel-pku
+      noisolstack: false
+    default: true
+  - name: comp2
+    mechanism:
+      driver: intel-pku
+      noisolstack: true
+libraries:
+  tlsf:
+    version: staging
+    kconfig:
+      - CONFIG_LIBTLSF=y
+  newlib:
+    version: staging
+    kconfig:
+      - CONFIG_LIBNEWLIBC=y
+      - CONFIG_LIBNEWLIBM=y
+    compartment: comp1
+  flexos-example:
+    version: staging
+    compartment: comp2
+volumes: {}
+networks: {}
+$ kraft configure
+```
+
+Now we have a fully set up system. We only have to build and run. The following
+commands are what you would run as part of your development workflow.
+
+Build the application with two MPK compartments:
+
+```
+$ make prepare && kraft -v build --no-progress --fast --compartmentalize
+```
+
+Run the freshly built image:
+
+```
+$ kraft run -M 1024 ""
+```
+
+### Redis
 
 Configure Redis with two compartments:
 

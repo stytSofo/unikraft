@@ -68,7 +68,7 @@ WORKDIR /root
 ##############
 # FlexOS
 
-RUN kraft list update
+RUN kraft -v list update
 RUN kraft -v list pull flexos-microbenchmarks@staging iperf@staging \
 		  newlib@staging tlsf@staging flexos-example@staging \
 		  lwip@staging redis@staging unikraft@staging \
