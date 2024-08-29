@@ -11,3 +11,18 @@ expression ret, var;
 @@
 - {{ fname }}(EL);
 + flexos_gate({{ lname }}, {{ fname }}, EL);
+
+@malloc_replacement@
+expression size;
+identifier tag_macro;
+@@
+- void *p = malloc(size);
++ void *p = mte_malloc(size, tag_macro);
+
+@malloc_replacement_no_var@
+expression size;
+identifier tag_macro;
+@@
+- malloc(size)
++ mte_malloc(size, tag_macro)
+

@@ -54,8 +54,16 @@
 #define flexos_vmept_gate_r(...) UK_CTASSERT(0)
 #endif /* CONFIG_LIBFLEXOS_VMEPT */
 
+//This ensures parameters are passed correctly. A function may accept more than one parameter which means we need to cover most of these cases.
+#if CONFIG_LIBFLEXOS_MTE
+#include <flexos/impl/armmte.h>
+#else
+#define flexos_mte_gate(...) UK_CTASSERT(0)
+#endif /* CONFIG_LIBFLEXOS_MTE */
+
+
 /* Build with function call instanciation (debugging) */
-#if (!CONFIG_LIBFLEXOS_INTELPKU && !CONFIG_LIBFLEXOS_VMEPT)
+#if (!CONFIG_LIBFLEXOS_INTELPKU && !CONFIG_LIBFLEXOS_VMEPT && !CONFIG_LIBFLEXOS_MTE)
 #include <uk/alloc.h>
 #define flexos_shared_alloc _uk_alloc_head
 #define flexos_comp0_alloc _uk_alloc_head

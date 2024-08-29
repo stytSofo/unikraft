@@ -37,6 +37,8 @@
 #include <uk/alloc.h>
 #include <uk/assert.h>
 #include <uk/essentials.h>
+#include <flexos/impl/armmte.h>
+
 
 void *malloc(size_t size)
 {

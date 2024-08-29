@@ -24,7 +24,7 @@ RUN apt update
 RUN apt build-dep -y coccinelle
 RUN apt install -y build-essential libncurses-dev python3 expect-dev moreutils \
 	flex unzip bison wget libxml2-utils tclsh python python-tempita python-six \
-	python-future python-ply xorriso qemu-system-x86 qemu qemu-kvm vim qemu-system \
+	python-future python-ply xorriso qemu-system-x86 qemu-system-arm qemu qemu-kvm vim qemu-system \
 	qemu-utils curl gawk git procps socat uuid-runtime python3-pip libsqlite3-dev \
 	bc libiscsi-dev librbd1 libnfs-dev libgfapi0 libffi-dev libiperf-dev net-tools \
 	bridge-utils iperf dnsmasq ninja-build gdb cscope
@@ -75,6 +75,11 @@ RUN kraft -v list pull flexos-microbenchmarks@staging iperf@staging \
 		  pthread-embedded@staging nginx@staging
 RUN cp /root/.unikraft/unikraft/flexos-support/porthelper/* /root/.unikraft/
 
+##############
+# FlexOS MTE
+# Generate the LLVM library as a library to be used during compilation of compartments
+RUN apt install -y clang-14
+RUN make /root/.unikraft/Pass3
 ##############
 # FlexOS EPT QEMU
 

@@ -19,6 +19,10 @@ config LIBFLEXOS_VMEPT
 	select DYNAMIC_PT
 	select PT_API
 
+config LIBFLEXOS_MTE
+	bool "Enable MTE support in FlexOS"
+	select HAVE_MTE
+
 if LIBFLEXOS_VMEPT
 config LIBFLEXOS_VMEPT_LIBRARY
 	bool "Build a library compartment (not main app)"
@@ -27,6 +31,7 @@ endif # LIBFLEXOS_VMEPT
 config LIBFLEXOS_NONE
 	bool "Function call gate instanciations (debugging)"
 endchoice
+
 
 if LIBFLEXOS_INTELPKU
 choice

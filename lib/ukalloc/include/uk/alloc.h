@@ -106,6 +106,11 @@ struct uk_alloc {
 
 extern struct uk_alloc *_uk_alloc_head;
 
+#if CONFIG_LIBFLEXOS_MTE
+#include <flexos/impl/armmte.h>
+
+#endif
+
 #if CONFIG_LIBFLEXOS_INTELPKU
 #include <flexos/impl/intelpku.h>
 

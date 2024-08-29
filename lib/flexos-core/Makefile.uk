@@ -43,6 +43,7 @@ CXXINCLUDES-$(CONFIG_LIBFLEXOS)	+= -I$(LIBFLEXOS_BASE)/include/
 ################################################################################
 LIBFLEXOS_SRCS-$(CONFIG_LIBFLEXOS_INTELPKU)	+= $(LIBFLEXOS_BASE)/intelpku.c
 LIBFLEXOS_SRCS-$(CONFIG_LIBFLEXOS_VMEPT)	+= $(LIBFLEXOS_BASE)/vmept.c
+LIBFLEXOS_SRCS-$(CONFIG_LIBFLEXOS_MTE)	+= $(LIBFLEXOS_BASE)/armmte.c
 # LIBFLEXOS_SRCS-$(CONFIG_LIBFLEXOS_VMEPT)	+= $(LIBFLEXOS_BASE)/wrappers.c
 
 LIBFLEXOS_CFLAGS-y	+= -fno-sanitize=kernel-address
