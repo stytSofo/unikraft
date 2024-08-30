@@ -106,6 +106,7 @@ struct uk_alloc {
 
 extern struct uk_alloc *_uk_alloc_head;
 
+//This will use our allocator and will be repaced by the kraft script from the fork
 #if CONFIG_LIBFLEXOS_MTE
 #include <flexos/impl/armmte.h>
 

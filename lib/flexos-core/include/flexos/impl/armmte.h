@@ -7,16 +7,18 @@
 #include <stdlib.h>
 
 typedef struct {
-    size_t size;     // Size of the memory block
-    uint64_t *ptr;   // Pointer to the memory block, should be tagged if using MTE
+	size_t size; // Size of the memory block
+	uint64_t
+	    *ptr; // Pointer to the memory block, should be tagged if using MTE
 } flexos_mte_pointer;
-
 
 typedef void (*function_ptr_t)(void *);
 typedef void (*function_ptr_t2)(void *, uint64_t);
 typedef void (*function_ptr_t3)(void *, uint64_t, uint64_t);
 typedef void (*function_ptr_t4)(void *, uint64_t, uint64_t, uint64_t);
 typedef void (*function_ptr_t5)(void *, uint64_t, uint64_t, uint64_t, uint64_t);
+typedef void (*function_ptr_t6)(void *, uint64_t, uint64_t, uint64_t, uint64_t,
+				uint64_t);
 // Taken from the implementation of vmept.h
 #define CHOOSE_GATE(dummy, g6, g5, g4, g3, g2, g1, g0, ...) g0
 
@@ -70,6 +72,16 @@ typedef void (*function_ptr_t5)(void *, uint64_t, uint64_t, uint64_t, uint64_t);
 		    (void *)ptr, (size_t)size, (uint8_t)tag_from,              \
 		    (uint8_t)tag_to, (function_ptr_t5)fname, (uint64_t)arg1,   \
 		    (uint64_t)arg2, (uint64_t)arg3, (uint64_t)arg4);           \
+	}
+
+
+#define flexos_mte_gate5(ptr, size, tag_from, tag_to, fname, arg1, arg2, arg3, \
+			 arg4, arg5)                                                 \
+	do {                                                                   \
+		cross_compartment5(                                            \
+		    (void *)ptr, (size_t)size, (uint8_t)tag_from,              \
+		    (uint8_t)tag_to, (function_ptr_t6)fname, (uint64_t)arg1,   \
+		    (uint64_t)arg2, (uint64_t)arg3, (uint64_t)arg4, (uint64_t)arg5);           \
 	}
 
 enum MTE_TAGS {
@@ -163,5 +175,20 @@ void cross_compartment3(void *ptr, size_t size, uint8_t current_tag,
 void cross_compartment4(void *ptr, size_t size, uint8_t current_tag,
 			uint8_t target_tag, function_ptr_t5 func, uint64_t arg1,
 			uint64_t arg2, uint64_t arg3, uint64_t arg4);
+
+/// @brief A helper function to re-tag addresses when crossing compartments and
+/// the target function accepts 4 argument
+/// @param ptr The tagged data pointer
+/// @param size The allocated memory size
+/// @param current_tag The current tag of ptr
+/// @param target_tag The tag of the callee
+/// @param func The function pointer
+/// @param arg1 The argument of the func function
+/// @param arg2 The argument of the func function
+/// @param arg3 The argument of the func function
+/// @param arg4 The argument of the func function
+void cross_compartment5(void *ptr, size_t size, uint8_t current_tag,
+			uint8_t target_tag, function_ptr_t6 func, uint64_t arg1,
+			uint64_t arg2, uint64_t arg3, uint64_t arg4, uint64_t arg5);
 
 #endif
