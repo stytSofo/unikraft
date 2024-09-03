@@ -6,6 +6,8 @@
 #include <unistd.h>
 #include <stdlib.h>
 
+static long int CROSS_COMPARTMENT_CALLS;
+
 typedef struct {
 	size_t size; // Size of the memory block
 	uint64_t

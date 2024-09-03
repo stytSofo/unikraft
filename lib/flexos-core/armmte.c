@@ -63,6 +63,7 @@ void cross_compartment(void *ptr, size_t size, uint8_t current_tag,
 		func(ptr);
 		return;
 	}
+	CROSS_COMPARTMENT_CALLS++;
 	// Retag the pointer with the target compartment's tag
 	ptr = mte_set_tag(ptr, target_tag, size);
 
@@ -80,6 +81,8 @@ void cross_compartment1(void *ptr, size_t size, uint8_t current_tag,
 		func(ptr, arg1);
 		return;
 	}
+	CROSS_COMPARTMENT_CALLS++;
+
 	// Retag the pointer with the target compartment's tag
 	ptr = mte_set_tag(ptr, target_tag, size);
 	arg1 = mte_set_tag(arg1, target_tag, size);
@@ -101,6 +104,8 @@ void cross_compartment2(void *ptr, size_t size, uint8_t current_tag,
 		return;
 	}
 	// Retag the pointer with the target compartment's tag
+	CROSS_COMPARTMENT_CALLS++;
+
 	ptr = mte_set_tag(ptr, target_tag, size);
 	arg1 = mte_set_tag(arg1, target_tag, size);
 	arg2 = mte_set_tag(arg2, target_tag, size);
@@ -122,6 +127,8 @@ void cross_compartment3(void *ptr, size_t size, uint8_t current_tag,
 		func(ptr, arg1, arg2, arg3);
 		return;
 	}
+	CROSS_COMPARTMENT_CALLS++;
+
 	// Retag the pointer with the target compartment's tag
 	ptr = mte_set_tag(ptr, target_tag, size);
 	arg1 = mte_set_tag(arg1, target_tag, size);
