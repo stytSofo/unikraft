@@ -5,6 +5,8 @@
 #include "prctl.h"
 #include <unistd.h>
 #include <stdlib.h>
+#include <uk/essentials.h>
+#include <uk/config.h>
 
 static long int CROSS_COMPARTMENT_CALLS;
 

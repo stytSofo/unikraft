@@ -64,6 +64,8 @@ void cross_compartment(void *ptr, size_t size, uint8_t current_tag,
 		return;
 	}
 	CROSS_COMPARTMENT_CALLS++;
+	uk_pr_debug("Calls: %ld", CROSS_COMPARTMENT_CALLS);
+
 	// Retag the pointer with the target compartment's tag
 	ptr = mte_set_tag(ptr, target_tag, size);
 
@@ -82,6 +84,7 @@ void cross_compartment1(void *ptr, size_t size, uint8_t current_tag,
 		return;
 	}
 	CROSS_COMPARTMENT_CALLS++;
+	uk_pr_debug("Calls: %ld", CROSS_COMPARTMENT_CALLS);
 
 	// Retag the pointer with the target compartment's tag
 	ptr = mte_set_tag(ptr, target_tag, size);
@@ -105,6 +108,7 @@ void cross_compartment2(void *ptr, size_t size, uint8_t current_tag,
 	}
 	// Retag the pointer with the target compartment's tag
 	CROSS_COMPARTMENT_CALLS++;
+	uk_pr_debug("Calls: %ld", CROSS_COMPARTMENT_CALLS);
 
 	ptr = mte_set_tag(ptr, target_tag, size);
 	arg1 = mte_set_tag(arg1, target_tag, size);
@@ -128,7 +132,7 @@ void cross_compartment3(void *ptr, size_t size, uint8_t current_tag,
 		return;
 	}
 	CROSS_COMPARTMENT_CALLS++;
-
+	uk_pr_debug("Calls: %ld", CROSS_COMPARTMENT_CALLS);
 	// Retag the pointer with the target compartment's tag
 	ptr = mte_set_tag(ptr, target_tag, size);
 	arg1 = mte_set_tag(arg1, target_tag, size);
